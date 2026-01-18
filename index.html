@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lendas Sitiadas - Mestre v0.4.8</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Open+Sans:wght@400;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="menu-btn" onclick="toggleMenu()">☰</div>
+    <div class="menu-overlay" id="overlay" onclick="toggleMenu()"></div>
+    <nav class="side-menu" id="side-menu">
+        <h2 style="color:var(--text-gold); font-family:'Cinzel'; text-align:center; margin-bottom:20px;">MENU</h2>
+        <div class="menu-item" onclick="toggleGrimorio(); toggleMenu()">📖 Grimório (Heróis)</div>
+        <div class="menu-item" onclick="toggleItens(); toggleMenu()">🎒 Compêndio de Itens</div>
+        <div class="menu-item" onclick="toggleRegras(); toggleMenu()">📜 Manual de Regras</div>
+        <div class="menu-item" onclick="toggleDebug(); toggleMenu()">🛠️ Painel do Mestre</div>
+        <div class="menu-item" onclick="toggleMenu()" style="color:var(--red-light);">✖ Fechar</div>
+    </nav>
+
+    <audio id="bgm-explore" loop>
+        <source src="musica_exploracao.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="bgm-common" loop>
+        <source src="musica_monstro.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="bgm-boss" loop>
+        <source src="musica_boss.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="bgm-victory">
+        <source src="musica_vitoria.mp3" type="audio/mpeg">
+    </audio>
+
+    <div class="audio-controls">
+        <button class="sound-toggle" onclick="toggleSound()" id="btn-sound">🔊 SFX</button>
+        <span style="font-size:0.8rem; color:#aaa;">♫</span>
+        <input type="range" id="vol-music" min="0" max="1" step="0.1" value="0.3" onchange="setVolume(this.value)">
+    </div>
+
+    <h1>Lendas Sitiadas <span style="font-size:0.5em; color:var(--text-gold); vertical-align:middle;">v0.4.8</span></h1>
+
+    <div id="screen-setup" class="screen active-screen">
+        <div class="card">
+            <h3 style="margin-bottom:15px; font-family:'Cinzel';">Configuração da Missão</h3>
+            <p style="color:var(--text-ink); font-size:0.9rem; margin-bottom:20px;">Selecione os heróis na mesa:</p>
+            <div class="setup-grid">
+                <label class="setup-label"><input type="checkbox" value="Saci"> 🌪️ Saci</label>
+                <label class="setup-label"><input type="checkbox" value="Iara"> 💧 Iara</label>
+                <label class="setup-label"><input type="checkbox" value="Boitatá"> 🔥 Boitatá</label>
+                <label class="setup-label"><input type="checkbox" value="Caipora"> 🍃 Caipora</label>
+            </div>
+            <button class="btn-main" onclick="prepararBriefing()">INICIAR JOGO</button>
+        </div>
+    </div>
+
+    <div id="modal-briefing">
+        <h2 style="color:var(--text-gold);">⚠️ Relatório de Crise</h2>
+        <div class="briefing-container">
+            <p>Os espíritos estão agitados. Antes de começar, uma ameaça foi detectada na região:</p>
+            <div id="crisis-display" class="crisis-text">Carregando...</div>
+            <div class="spawn-instruct">
+                <h3>Regra de Infiltração:</h3>
+                <p>1. Coloque os monstros da crise no tabuleiro.</p>
+                <p>2. Posicione seus heróis em uma <b>REGIÃO SEGURA</b>.</p>
+                <p style="color:var(--red-fire); font-weight:bold;">* Se uma região (Ex: Norte) tem monstro, você NÃO
+                    pode spawnar lá!</p>
+                <p>3. <b>MISSÃO CRÍTICA:</b> Resolva o problema antes que o tempo acabe!</p>
+                <p>4. Clique abaixo para iniciar.</p>
+            </div>
+        </div>
+        <button class="btn-main" onclick="comecarJogoReal()" style="margin-top:20px;">COMEÇAR MISSÃO</button>
+    </div>
+
+    <div id="screen-game" class="screen">
+        <div class="objective-box" id="obj-display">OBJETIVO: SOBREVIVA</div>
+
+        <div id="crisis-tracker" class="crisis-tracker">
+            <div id="crisis-name" class="crisis-title">MISSÃO ATIVA</div>
+            <div class="crisis-timer">⏳ <span id="crisis-turns">3</span> TURNOS</div>
+        </div>
+
+        <div class="status-container">
+            <div class="bar-label"><span>Corrupção</span><span id="label-corr">0%</span></div>
+            <div class="bar-bg">
+                <div id="bar-corr" class="bar-fill"></div>
+            </div>
+        </div>
+
+        <div class="game-layout-split">
+            <div class="game-col-left">
+                <div class="card">
+                    <div style="font-size:0.7rem; text-transform:uppercase; color:#666;">Turno Atual</div>
+                    <div style="font-size:2.5rem; line-height:1; font-family:'Cinzel'; color:var(--text-ink); margin:5px 0;"
+                        id="turno-num">1</div>
+                    <div id="evento-texto" class="text-safe"
+                        style="min-height:20px; font-size:0.9rem; font-weight:bold;">Aguardando início...</div>
+                </div>
+                <button class="btn-sos" onclick="toggleMorte()">☠️ SOS / CAÍ!</button>
+                <br>
+                <div class="dashboard-grid">
+                    <div class="dash-left">
+                        <div
+                            style="font-size:0.7rem; color:#5D4037; margin-bottom:5px; border-bottom:1px dashed #8D6E63; padding-bottom:2px; font-weight:bold;">
+                            HISTÓRICO</div>
+                        <ul id="log-lista" class="log-list-mini"></ul>
+                    </div>
+                    <div class="dash-right">
+                        <button class="btn-advance" onclick="proximoTurno()">AVANÇAR<br>TURNO</button>
+                        <div class="sidebar-inventory" id="inventory-box">
+                            <div class="sidebar-title">🎒 INVENTÁRIO</div>
+                            <div id="inv-list-container"><span class="inv-empty">Vazio</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="game-col-right">
+                <div class="card threat-panel-card">
+                    <h4 id="threat-title"
+                        style="color:var(--text-ink); margin-bottom:10px; font-size:0.8rem; border-bottom:1px solid #ccc; padding-bottom:5px;">
+                        Ameaças Ativas (0/7)</h4>
+                    <div id="lista-monstros-container">
+                        <div id="lista-monstros"></div>
+                    </div>
+                    <div id="threat-level" style="font-size:0.7rem; color:var(--red-fire); margin-top:5px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-combate">
+        <div class="combat-panel">
+            <div class="combat-header-banner">
+                <div class="combat-title" id="modal-titulo">VS INIMIGO</div>
+                <div class="combat-hp" id="modal-hp">HP</div>
+            </div>
+
+            <div class="combat-body">
+                <div>
+                    <div
+                        style="font-size:0.7rem; color:#5D4037; font-weight:800; text-transform:uppercase; margin-bottom:5px; text-align:center;">
+                        Quem vai atacar?</div>
+                    <select id="active-hero" class="hero-select-dropdown"></select>
+                    <div style="margin-top:10px; text-align:center;">
+                        <div
+                            style="font-size:0.7rem; color:#5D4037; font-weight:800; text-transform:uppercase; margin-bottom:5px;">
+                            Alvos na Zona</div>
+                        <div id="zone-targets" class="combat-targets"></div>
+                    </div>
+                </div>
+
+                <div class="combat-grid">
+                    <div class="dice-container" id="dice-wrapper">
+                        <div class="dice-wrapper"><input type="number" class="dice-input good" placeholder="+"
+                                inputmode="numeric"></div>
+                        <div class="dice-wrapper"><input type="number" class="dice-input bad" placeholder="-"
+                                inputmode="numeric"></div>
+                        <div class="btn-add-dice" onclick="openDiceMenu()">+</div>
+                    </div>
+                    <div class="item-slot">
+                        <h6>USAR ITEM</h6>
+                        <div id="combat-inventory" style="width:100%;"></div>
+                    </div>
+                </div>
+
+                <div id="combat-feedback" class="combat-log-box">Preparem-se...</div>
+
+                <div class="combat-actions">
+                    <button class="btn-combat btn-resolve" onclick="ataqueBasico()">⚔️ Resolver Dados</button>
+                    <div class="action-row">
+                        <input type="number" id="dmg-manual" class="dice-input" placeholder="Dano"
+                            style="border-color:var(--blue-water); width:70px; font-size:1.4rem;">
+                        <button class="btn-combat btn-skill" onclick="usarHabilidade()">✨ Habilidade</button>
+                    </div>
+                    <button id="btn-villain-atk" class="btn-combat btn-villain-atk" onclick="turnoVilao(false)">👹
+                        Ataque Vilão (1d3)</button>
+                    <button class="btn-flee" onclick="fecharCombate(false)">🏃 Fugir (Pânico)</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-dice-select"
+            style="display:none; position:absolute; background:var(--bg-parchment); border:3px solid var(--bg-wood-light); padding:10px; border-radius:12px; gap:10px; top:50%; left:50%; transform:translate(-50%, -50%); z-index:110; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <button class="dice-input good" style="width:50px; height:50px; border-width:2px; font-size:1.5rem;"
+                onclick="addDice('good')">+</button>
+            <button class="dice-input bad" style="width:50px; height:50px; border-width:2px; font-size:1.5rem;"
+                onclick="addDice('bad')">-</button>
+        </div>
+    </div>
+
+    <div id="modal-loot">
+        <h2 style="color:var(--text-gold);">Vitória!</h2>
+        <p style="color:var(--text-ink); font-size:0.9rem; margin-bottom:20px; text-align:center;">Escolha <b>1 item</b>
+            de recompensa:</p>
+        <div id="loot-container" class="loot-options"></div>
+    </div>
+
+    <div id="modal-grimorio">
+        <h2 style="color:var(--text-gold);">Grimório das Lendas</h2>
+        <div class="grimorio-grid">
+            <div class="hero-card boitata">
+                <div class="hero-header"><span class="hero-name">🔥 BOITATÁ</span><span class="hero-role">TANQUE</span>
+                </div>
+                <ul class="skill-list">
+                    <li><span class="skill-type">🛡️ Passiva:</span> <b>Chamas Eternas:</b> Todo Crítico causa status
+                        "Queimadura".</li>
+                    <li><span class="skill-type">⚡ Ativa (1):</span> <b>Olhar de Fogo:</b> Provoca o inimigo e prepara
+                        Contra-Ataque.</li>
+                    <li><span class="skill-type">🌟 Ulti (3):</span> <b>Protetor:</b> Imunidade total a dano na zona.
+                    </li>
+                </ul>
+            </div>
+            <div class="hero-card caipora">
+                <div class="hero-header"><span class="hero-name">🍃 CAIPORA</span><span class="hero-role">DANO</span>
+                </div>
+                <ul class="skill-list">
+                    <li><span class="skill-type">🛡️ Passiva:</span> <b>Lança Afiada:</b> Críticos aplicam
+                        "Sangramento".</li>
+                    <li><span class="skill-type">⚡ Ativa (1):</span> <b>Montaria:</b> Move 2 Zonas + Ataque Grátis.</li>
+                    <li><span class="skill-type">🌟 Ulti (2):</span> <b>Fúria:</b> Rola 4 Dados de Ataque.</li>
+                </ul>
+            </div>
+            <div class="hero-card iara">
+                <div class="hero-header"><span class="hero-name">💧 IARA</span><span class="hero-role">SUPORTE</span>
+                </div>
+                <ul class="skill-list">
+                    <li><span class="skill-type">🛡️ Passiva:</span> <b>Hipnose:</b> Críticos impedem o inimigo de
+                        mover.</li>
+                    <li><span class="skill-type">⚡ Ativa (X):</span> <b>Águas da Vida:</b> Cura 1 HP de um aliado.</li>
+                    <li><span class="skill-type">🌟 Ulti (3):</span> <b>Afogamento:</b> Stun em todos os inimigos.</li>
+                </ul>
+            </div>
+            <div class="hero-card saci">
+                <div class="hero-header"><span class="hero-name">🌪️ SACI</span><span class="hero-role">CONTROLE</span>
+                </div>
+                <ul class="skill-list">
+                    <li><span class="skill-type">🛡️ Passiva:</span> <b>Ginga:</b> 50% de chance de evitar ataques.</li>
+                    <li><span class="skill-type">⚡ Ativa (1):</span> <b>Redemoinho:</b> Dano em área.</li>
+                    <li><span class="skill-type">🌟 Ulti (2):</span> <b>A Peça:</b> O inimigo perde o turno.</li>
+                </ul>
+            </div>
+        </div>
+        <button class="btn-main" onclick="toggleGrimorio()" style="margin-top:20px;">FECHAR</button>
+    </div>
+
+    <div id="modal-itens">
+        <div class="book-container">
+            <div class="book-title">COMPÊNDIO DE ITENS</div>
+            <div id="item-book-content" class="book-page active" style="padding-top:10px;">
+            </div>
+            <div class="book-nav">
+                <button class="nav-btn" onclick="changeItemPage(-1)" id="btn-item-prev">❮ ANTERIOR</button>
+                <span id="item-page-indicator" style="font-size:0.8rem; padding-top:4px;">Pág 1/1</span>
+                <button class="nav-btn" onclick="changeItemPage(1)" id="btn-item-next">PRÓXIMO ❯</button>
+            </div>
+            <button class="btn-main" onclick="toggleItens()"
+                style="margin-top:15px; font-size:0.9rem; padding:10px;">FECHAR</button>
+        </div>
+    </div>
+
+    <div id="modal-morte">
+        <div class="morte-container" style="background:#263238; border-color:#B71C1C; color:#FFF;">
+            <h2 style="color:#FF5252; border-color:#FF5252; background:rgba(0,0,0,0.5);">⚠️ PROTOCOLO DE MORTE</h2>
+            <div style="text-align:center; margin-top:20px;">
+                <p style="font-size:1.1rem; margin-bottom:15px;">Seu HP chegou a 0. O sistema está falhando.</p>
+                <p style="color:#FFEB3B; font-weight:bold; font-size:1.2rem;">ROLE 2 DADOS FÍSICOS</p>
+
+                <div
+                    style="background:rgba(0,0,0,0.3); padding:15px; border-radius:8px; margin:20px 0; text-align:left;">
+                    <p style="margin-bottom:10px;"><b style="color:#66BB6A;">🟢 SOMA 7 ou MAIS:</b><br>Você reinicia o
+                        sistema!<br>Recupere <b>3 HP</b> imediatamente.<br><small style="color:#E57373;">(Penalidade:
+                            Aumente a Corrupção em +5%)</small></p>
+                    <p><b style="color:#EF5350;">🔴 SOMA 6 ou MENOS:</b><br>Erro Fatal. Você cai e vira um Token.<br>Um
+                        aliado precisa gastar <b>1 Ação</b> na sua zona para te reviver.</p>
+                </div>
+            </div>
+            <button class="btn-main" onclick="toggleMorte()" style="background:#546E7A; border-color:#78909C;">FECHAR
+                PAINEL</button>
+        </div>
+    </div>
+
+    <div id="modal-evento">
+        <div class="event-container" style="max-width:450px;">
+            <h2 style="color:var(--text-gold); border-color:#FFC107;">❓ LOCAL MISTERIOSO</h2>
+            <div class="event-card-content">
+                <div class="event-img-placeholder" id="evt-icon">🏚️</div>
+                <h3 id="evt-title" style="margin-bottom:5px; color:#3E2723;">Cabana Estranha</h3>
+                <div id="evt-desc" class="event-desc">
+                    Você encontrou uma cabana no meio da mata.
+                </div>
+            </div>
+            <button class="btn-main" style="margin-top:10px; background:#757575; border-color:#424242;"
+                onclick="fecharEvento()">IGNORAR E SAIR</button>
+        </div>
+    </div>
+
+    <div id="modal-debug">
+        <div class="debug-container">
+            <h2 style="color:#F44336; border-color:#F44336;">🛠️ PAINEL DO MESTRE</h2>
+
+            <div id="debug-login" style="text-align:center;">
+                <p style="margin-bottom:10px; color:#bbb;">Área restrita. Digite a senha:</p>
+                <input type="password" id="debug-pass"
+                    style="padding:10px; border-radius:5px; border:1px solid #555; background:#333; color:#fff; text-align:center; font-size:1.2rem; width:150px;">
+                <button class="btn-main" style="margin-top:10px;" onclick="checkDebugPassword()">ACESSAR</button>
+            </div>
+
+            <div id="debug-controls" style="display:none;">
+                <div class="debug-section-title">💀 INVOCAÇÃO DE CHEFES</div>
+                <div class="debug-grid">
+                    <button class="btn-debug" onclick="debugSpawnBoss('👁️ Alucinação da Cuca')">Cuca</button>
+                    <button class="btn-debug" onclick="debugSpawnBoss('☣️ Boto de Piche')">Boto</button>
+                    <button class="btn-debug" onclick="debugSpawnBoss('🚜 O Devorador de Ferro')">Trator</button>
+                    <button class="btn-debug" onclick="debugSpawnBoss('👾 A Falha na Realidade')">GLITCH FINAL</button>
+                </div>
+
+                <div class="debug-section-title">🎒 LOOT DELIVERY (QUEST/LENDÁRIO)</div>
+                <div class="debug-grid">
+                    <button class="btn-debug" onclick="pegarLoot('💎 O Olho da Cobiça', true)">Olho Cobiça</button>
+                    <button class="btn-debug" onclick="pegarLoot('🥘 Panelada da Vovó', true)">Panelada</button>
+                    <button class="btn-debug" onclick="pegarLoot('✨ Esporos de Confusão', true)">Esporos</button>
+                    <button class="btn-debug" onclick="pegarLoot('💾 Pen Drive Ancestral', true)">Pen Drive</button>
+                </div>
+
+                <div class="debug-section-title">⚡ CONTROLE DE FLUXO</div>
+                <div class="debug-grid">
+                    <button class="btn-debug" style="color:#66BB6A; border-color:#66BB6A;" onclick="debugHealAll()">❤️
+                        SALVAÇÃO (Reset Corr)</button>
+                    <button class="btn-debug" style="color:#29B6F6; border-color:#29B6F6;" onclick="debugForceEvent()">❓
+                        FORÇAR EVENTO</button>
+                </div>
+            </div>
+
+            <button class="btn-main" onclick="toggleDebug()"
+                style="margin-top:20px; background:#424242; border-color:#616161;">FECHAR</button>
+        </div>
+    </div>
+
+    <div id="modal-regras">
+        <div class="book-container">
+            <div class="book-title">LIVRO DE REGRAS</div>
+            <div class="book-page active" id="page-1">
+                <div class="book-section">RESUMO DO JOGO</div>
+                <p class="book-text">Bem-vindo a <b>Lendas Sitiadas</b>. Você controla entidades do folclore brasileiro
+                    lutando contra a "Corrupção Digital" que devora a floresta.</p>
+                <div class="book-section">COMO VENCER</div>
+                <p class="book-text">1. Sobreviva até o <b>Turno 15</b>.<br>2. Derrote o Chefe Final: <b>A Falha na
+                        Realidade</b>.</p>
+                <div class="book-section">COMO PERDER</div>
+                <p class="book-text">❌ <b>Colapso:</b> A Barra de Corrupção chega a 100%.<br>❌ <b>Superpopulação:</b> Se
+                    houver mais monstros no mapa do que o limite permitido (4 + Nº Jogadores).</p>
+            </div>
+            <div class="book-page" id="page-6">
+                <div class="book-section" style="color:#D32F2F;">PROTOCOLO GLITCH (MORTE)</div>
+                <p class="book-text">Quando o HP chega a 0, role <b>2 DADOS</b>:</p>
+                <p class="book-text">🟢 <b>SOMA 7+: REINICIAR SISTEMA</b><br>O herói levanta imediatamente com 3
+                    HP.<br><i>Custo: +5% de Corrupção.</i></p>
+                <p class="book-text">🔴 <b>SOMA 6-: ERRO FATAL</b><br>O herói cai e vira um TOKEN. Ele não pode jogar.
+                </p>
+                <div class="book-section">COMO SALVAR</div>
+                <p class="book-text">Outro herói deve ir até a zona e gastar <b>1 AÇÃO</b> para reparar o aliado (volta
+                    com 3 HP).</p>
+            </div>
+            <div class="book-nav">
+                <button class="nav-btn" onclick="changePage(-1)" id="btn-prev">❮ ANTERIOR</button>
+                <span id="page-indicator" style="font-size:0.8rem; padding-top:4px;">Pág 1/6</span>
+                <button class="nav-btn" onclick="changePage(1)" id="btn-next">PRÓXIMO ❯</button>
+            </div>
+            <button class="btn-main" onclick="toggleRegras()"
+                style="margin-top:15px; font-size:0.9rem; padding:10px;">FECHAR LIVRO</button>
+        </div>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
