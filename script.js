@@ -627,20 +627,33 @@ const CombatState = {
     inimigo: null,
     buffDano: 0,
     isBoss: false,
-    // Armazena contadores de turnos para status
-    status: {
-        stun: false,
-        fragile: false,
-        bleed: 0,  // Contador (Ex: 3 turnos restantes)
-        burn: 0    // Contador
-    },
+    bossCharge: 0, // NOVO: Energia do Chefe (0 a 3)
+    // ... (resto igual)
+    status: { stun: false, fragile: false, bleed: 0, burn: 0, immune: false, reflect: false },
 
-    /** Reseta o estado para iniciar uma nova luta */
     reset: function (monstro) {
         this.inimigo = monstro;
         this.buffDano = 0;
-        this.isBoss = monstro.nome.includes("BOSS") || monstro.nome.includes("GLITCH") || monstro.nome.includes("Cuca") || monstro.nome.includes("Boto");
-        this.status = { stun: false, fragile: false, bleed: 0, burn: 0 };
+        this.bossCharge = 0; // Reseta carga
+        this.isBoss = monstro.nome.includes("BOSS") || monstro.nome.includes("Devorador") || monstro.nome.includes("Falha");
+        this.status = { stun: false, fragile: false, bleed: 0, burn: 0, immune: false, reflect: false };
+        this.updateBossUI();
+    },
+
+    updateBossUI: function() {
+        // Atualiza visualmente a barra de carga do Boss (Texto simples por enquanto)
+        const el = document.getElementById('modal-titulo');
+        if(this.isBoss) {
+            const cargas = "⚡".repeat(this.bossCharge) + "⚪".repeat(3 - this.bossCharge);
+            el.innerHTML = `VS ${this.inimigo.nome.toUpperCase()} <br><span style="font-size:0.7em">${cargas}</span>`;
+        } else {
+            // Lógica normal para monstros comuns
+             // ... (código existente de ícones de status)
+             let html = "VS " + this.inimigo.nome.toUpperCase();
+             if (this.status.stun) html += " 😵";
+             if (this.status.fragile) html += " 💔";
+             el.innerHTML = html;
+        }
     }
 };
 
@@ -747,6 +760,13 @@ function ataqueBasico() {
     } else {
         msg = ganhouEnergia ? "❌ ERROU (+ ⚡ Energia)" : "❌ ERROU!";
         AudioSys.playTone(150, 'sine', 0.2);
+        
+        // NOVO: Errar contra Boss enche a barra dele!
+        if (CombatState.isBoss && CombatState.bossCharge < 3) {
+            CombatState.bossCharge++;
+            msg += "<br>⚠️ BOSS CARREGANDO!";
+            CombatState.updateBossUI();
+        }
     }
 
     // Aplica buffs de itens consumíveis (ex: Veneno de Sapo)
@@ -823,69 +843,60 @@ function turnoVilao(isCarregando) {
     AudioSys.checkResume();
     if (!CombatState.inimigo) return;
 
-    // 1. VERIFICA STUN (Perde a vez)
+    // 1. CHECA STUN
     if (CombatState.status.stun) {
         alert("O INIMIGO ESTÁ ATORDOADO!\nEle perde a vez.");
-        addLog("😵 Inimigo atordoado perdeu o turno.");
-        CombatState.status.stun = false; // Stun dura 1 turno apenas
-        atualizarIconesStatus();
-        document.getElementById('combat-feedback').innerHTML = "<span class='log-hit'>😵 Inimigo Atordoado!</span>";
-        return; // Sai da função, não ataca
+        CombatState.status.stun = false;
+        CombatState.updateBossUI(); // Atualiza UI
+        return;
     }
 
-    // UI de preparação
     const btn = document.getElementById('btn-villain-atk');
     btn.disabled = true;
     btn.style.opacity = "0.5";
     document.getElementById('combat-feedback').innerText = "⚠ Vilão preparando ataque...";
-    AudioSys.playTone(100, 'sawtooth', 0.5);
+    
+    // 2. CHECA SE VAI USAR HABILIDADE (Carga Cheia = 3)
+    const bossData = bossesDB.find(b => b.nome === CombatState.inimigo.nome);
+    const vaiUsarSkill = CombatState.isBoss && CombatState.bossCharge >= 3 && bossData;
 
     setTimeout(() => {
-        // 2. VERIFICA SANGRAMENTO (Dano antes de agir)
+        // Processa Sangramento/Queimadura primeiro (dano passivo)
         if (CombatState.status.bleed > 0) {
-            const danoBleed = 1; // Regra: 1 de dano por turno
-            CombatState.inimigo.hp -= danoBleed;
-            CombatState.status.bleed--; // Reduz contador
-            
+            CombatState.inimigo.hp -= 1;
+            CombatState.status.bleed--;
             document.getElementById('modal-hp').innerText = CombatState.inimigo.hp + " HP";
-            addLog(`🩸 Sangramento: Vilão tomou ${danoBleed} dano.`);
-            showFloatingText(danoBleed, window.innerWidth/2, window.innerHeight/2 - 100, 'dmg-hero');
+            if (CombatState.inimigo.hp <= 0) { finalizeVitoria(); return; }
+        }
+
+        // --- EXECUÇÃO DO ATAQUE OU SKILL ---
+        if (vaiUsarSkill) {
+            // Escolhe 1 das 3 skills aleatoriamente
+            const skill = bossData.skills[Math.floor(Math.random() * bossData.skills.length)];
+            executarSkillBoss(skill);
             
-            atualizarIconesStatus();
-
-            // Se morrer de sangramento, acaba aqui
-            if (CombatState.inimigo.hp <= 0) {
-                finalizarVitoria();
-                return;
+            // Reseta a carga
+            CombatState.bossCharge = 0;
+            CombatState.updateBossUI();
+        } else {
+            // Ataque Normal
+            let danoBase = CombatState.isBoss ? 4 : 2;
+            let danoRolado = Math.floor(Math.random() * danoBase) + 1;
+            
+            // Reflete Dano (Se Boto estiver com escudo)
+            if (CombatState.status.reflect) {
+                alert("O ESCUDO DO BOTO REFLETE O DANO!"); 
+                // Logica de refletir (narrativa)
+                CombatState.status.reflect = false; // Consome escudo
             }
+
+            document.body.classList.add('shake-active');
+            AudioSys.sfx.villain();
+            
+            const msg = `⚔️ ATAQUE: ${danoRolado} DANO!`;
+            document.getElementById('combat-feedback').innerHTML = `<div class="villain-strike-text">${msg}</div>`;
+            addLog(`👹 ${CombatState.inimigo.nome} atacou (${danoRolado})`);
         }
-
-        // 3. CÁLCULO DE DANO (Com Queimadura)
-        const alvos = document.querySelectorAll('.target-chk:checked');
-        let alvoNome = "HERÓI";
-        if (alvos.length > 0) alvoNome = alvos[Math.floor(Math.random() * alvos.length)].value.toUpperCase();
-
-        let danoBase = CombatState.isBoss ? 4 : 2; // Dano máximo do dado (d3 ou d4)
-        let danoRolado = Math.floor(Math.random() * danoBase) + 1;
-        let msgExtra = "";
-
-        // Regra de Queimadura: Reduz dano em 1
-        if (CombatState.status.burn > 0) {
-            const reducao = 1;
-            danoRolado = Math.max(0, danoRolado - reducao); // Não deixa ficar negativo
-            CombatState.status.burn--; // Reduz contador
-            msgExtra = `<br><small>🔥 Queimadura reduziu o dano em ${reducao}!</small>`;
-            atualizarIconesStatus();
-        }
-
-        // Efeitos Visuais
-        document.body.classList.add('shake-active');
-        AudioSys.sfx.villain();
-        showFloatingText(danoRolado, window.innerWidth / 2, window.innerHeight / 2 + 50, 'dmg-enemy');
-
-        const msg = `⚔️ ${alvoNome} TOMOU ${danoRolado} DANO!${msgExtra}`;
-        document.getElementById('combat-feedback').innerHTML = `<div class="villain-strike-text">${msg}</div>`;
-        addLog(`👹 ${CombatState.inimigo.nome} atacou ${alvoNome} (${danoRolado})`);
 
         setTimeout(() => {
             document.body.classList.remove('shake-active');
@@ -893,6 +904,35 @@ function turnoVilao(isCarregando) {
             btn.style.opacity = "1";
         }, 500);
     }, 800);
+}
+
+// NOVO: Função que processa os efeitos das skills
+function executarSkillBoss(skill) {
+    AudioSys.sfx.alarm(); // Som de perigo
+    let msg = `<span style="color:#FFD700">💀 ${skill.name.toUpperCase()}</span><br><small>${skill.desc}</small>`;
+    
+    // Aplica lógica baseada no tipo
+    switch(skill.type) {
+        case 'heal':
+            CombatState.inimigo.hp += skill.val;
+            document.getElementById('modal-hp').innerText = CombatState.inimigo.hp + " HP";
+            break;
+        case 'immune':
+            CombatState.status.immune = true;
+            break;
+        case 'corr':
+            GameState.status.corrupcao += skill.val;
+            atualizarCorrupcaoUI();
+            break;
+        case 'reflect':
+            CombatState.status.reflect = true;
+            break;
+        // Outros tipos são puramente narrativos/instrucionais para os jogadores
+    }
+
+    document.getElementById('combat-feedback').innerHTML = `<div class="villain-strike-text" style="font-size:1.2rem; color:#FFD700; border-color:#FFD700;">${msg}</div>`;
+    addLog(`💀 BOSS SKILL: ${skill.name}`);
+    alert(`⚠️ O CHEFE USOU UMA HABILIDADE!\n\n${skill.name}\n${skill.desc}`);
 }
 
 // --- FUNÇÕES AUXILIARES E UI ---

@@ -57,12 +57,68 @@ const heroisDB = {
 };
 
 const monstrosDB = [{ nome: "Rastro de Pólvora", hp: 3 }, { nome: "Serra Autônoma", hp: 4 }, { nome: "Lama Tóxica", hp: 3 }, { nome: "Fogo Fátuo", hp: 3 }, { nome: "Golem de Mercúrio", hp: 4 }];
+
 const bossesDB = [
-    { nome: "👁️ Alucinação da Cuca", hp: 13, turn: 5, title: "BOSS: A MENTE MENTE!", loot: "🧿 Amuleto da Cuca" },
-    { nome: "☣️ Boto de Piche", hp: 15, turn: 8, title: "BOSS: O SEDUTOR TÓXICO!", loot: "🔱 Tridente do Rio" },
-    { nome: "🚜 O Devorador de Ferro", hp: 18, turn: 10, title: "SUB-CHEFE MECÂNICO!", loot: "🛢️ Óleo de Motor" },
-    { nome: "🌑 Jurupari, o Pesadelo", hp: 21, turn: 12, title: "BOSS: O PROTETOR CAÍDO!", loot: "🏹 Arco Sombrio" },
-    { nome: "👾 A Falha na Realidade", hp: 33, turn: 15, title: "OBJETIVO FINAL: DELETE O VÍRUS!", loot: "👑 Coroa do Rei do Mato" }
+    { 
+        nome: "👁️ Alucinação da Cuca", 
+        hp: 13, 
+        turn: 5, 
+        title: "BOSS: A MENTE MENTE!", 
+        loot: "🧿 Amuleto da Cuca",
+        skills: [
+            { name: "Caldeirão da Bruxa", type: "heal", val: 4, desc: "A Cuca bebe uma poção e cura 4 HP!" },
+            { name: "Espelho da Mente", type: "immune", val: 1, desc: "ILUSÃO! A Cuca fica INTANGÍVEL neste turno (0 Dano)." },
+            { name: "Pesadelo Coletivo", type: "stun_all", val: 0, desc: "GRITO DE PAVOR! Todos os heróis perdem o próximo turno." }
+        ]
+    },
+    { 
+        nome: "☣️ Boto de Piche", 
+        hp: 15, 
+        turn: 8, 
+        title: "BOSS: O SEDUTOR TÓXICO!", 
+        loot: "🔱 Tridente do Rio",
+        skills: [
+            { name: "Sedução Tóxica", type: "dmg_hero", val: 0, desc: "O Boto controla sua mente! Ataque seu aliado mais próximo." },
+            { name: "Maré de Piche", type: "dmg_all", val: 2, desc: "Explosão de Lama! Todos os heróis tomam 2 de Dano + Queimadura." },
+            { name: "Pele Corrosiva", type: "reflect", val: 1, desc: "ESCUDO ÁCIDO! Quem atacar o Boto neste turno recebe o dano de volta." }
+        ]
+    },
+    { 
+        nome: "🚜 O Devorador de Ferro", 
+        hp: 18, 
+        turn: 10, 
+        title: "SUB-CHEFE MECÂNICO!", 
+        loot: "🛢️ Óleo de Motor",
+        skills: [
+            { name: "Escapamento Aberto", type: "corr", val: 15, desc: "Fumaça preta cobre o céu! A Corrupção aumenta em +15%." },
+            { name: "Lâmina Giratória", type: "dmg_heavy", val: 6, desc: "A serra acerta em cheio! Um herói toma 6 DE DANO!" },
+            { name: "Blindagem de Aço", type: "armor", val: 3, desc: "Placas de metal descem! O Trator ganha Resistência a Dano." }
+        ]
+    },
+    { 
+        nome: "🌑 Jurupari, o Pesadelo", 
+        hp: 21, 
+        turn: 12, 
+        title: "BOSS: O PROTETOR CAÍDO!", 
+        loot: "🏹 Arco Sombrio",
+        skills: [
+            { name: "Lei do Silêncio", type: "silence", val: 2, desc: "ANTI-MAGIA! Ninguém pode usar Habilidades ou Itens por 2 turnos." },
+            { name: "Devorar Sonhos", type: "drain", val: 2, desc: "VAMPIRISMO! Ele rouba 2 HP de cada herói e se cura." },
+            { name: "Véu da Escuridão", type: "blind", val: 0, desc: "CEGUEIRA! Adicione 2 Dados Ruins em todas as rolagens." }
+        ]
+    },
+    { 
+        nome: "👾 A Falha na Realidade", 
+        hp: 33, 
+        turn: 15, 
+        title: "OBJETIVO FINAL: DELETE O VÍRUS!", 
+        loot: "👑 Coroa do Rei do Mato",
+        skills: [
+            { name: "Lag do Sistema", type: "energy", val: 0, desc: "ERRO DE CONEXÃO! Todos os jogadores perdem toda a Energia acumulada." },
+            { name: "Erro 404", type: "delete", val: 0, desc: "ARQUIVO CORROMPIDO! Um item aleatório do grupo foi deletado." },
+            { name: "Tela Azul da Morte", type: "hp_set", val: 1, desc: "CRITICAL ERROR! O HP de todos os heróis cai para 1." }
+        ]
+    }
 ];
 
 const lootDB = [
