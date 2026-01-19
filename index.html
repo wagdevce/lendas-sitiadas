@@ -19,6 +19,12 @@
     <div class="menu-overlay" id="overlay" onclick="toggleMenu()"></div>
     <nav class="side-menu" id="side-menu">
         <h2 style="color:var(--text-gold); font-family:'Cinzel'; text-align:center; margin-bottom:20px;">MENU</h2>
+       <h2 style="color:var(--text-gold); font-family:'Cinzel'; text-align:center; margin-bottom:20px;">MENU</h2>
+
+        <div class="menu-item menu-save" onclick="salvarJogo(); toggleMenu()">💾 Salvar Jogo</div>
+        <div class="menu-item menu-load" onclick="carregarJogo(); toggleMenu()">📂 Carregar Jogo</div>
+
+        <hr style="border:0; border-top:1px dashed #5D4037; margin:10px 0;">
         <div class="menu-item" onclick="toggleGrimorio(); toggleMenu()">📖 Grimório (Heróis)</div>
         <div class="menu-item" onclick="toggleItens(); toggleMenu()">🎒 Compêndio de Itens</div>
         <div class="menu-item" onclick="toggleRegras(); toggleMenu()">📜 Manual de Regras</div>
@@ -27,16 +33,16 @@
     </nav>
 
     <audio id="bgm-explore" loop>
-        <source src="musica_exploracao.mp3" type="audio/mpeg">
+        <source src="assets/musica_exploracao.mp3" type="audio/mpeg">
     </audio>
     <audio id="bgm-common" loop>
-        <source src="musica_monstro.mp3" type="audio/mpeg">
+        <source src="assets/musica_monstro.mp3" type="audio/mpeg">
     </audio>
     <audio id="bgm-boss" loop>
-        <source src="musica_boss.mp3" type="audio/mpeg">
+        <source src="assets/musica_boss.mp3" type="audio/mpeg">
     </audio>
     <audio id="bgm-victory">
-        <source src="musica_vitoria.mp3" type="audio/mpeg">
+        <source src="assets/musica_vitoria.mp3" type="audio/mpeg">
     </audio>
 
     <div class="audio-controls">

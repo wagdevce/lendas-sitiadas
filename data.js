@@ -1,3 +1,61 @@
+/* --- BANCO DE DADOS DE HERÓIS (Fiel às Cartas) --- */
+const heroisDB = {
+    "Saci": {
+        role: "Controle",
+        // Ataque Básico (Automático no Crítico)
+        onCrit: "stun", // Confusão = Stun por enquanto
+        onCritTurns: 1,
+        
+        // Botão de Habilidade: Skill [2] Redemoinho
+        skillName: "🌪️ Redemoinho",
+        desc: "ATAQUE EM ÁREA. Causa 1 de dano em TODOS os inimigos da zona.",
+        cost: "1 Energia ⚡",
+        damage: 1, 
+        statusApply: null // Redemoinho é dano puro em área
+    },
+    "Boitatá": {
+        role: "Tanque",
+        // Ataque Básico (Automático no Crítico)
+        onCrit: "burn",
+        onCritTurns: 2,
+
+        // Botão de Habilidade: Skill [3] Escudo de Escamas
+        skillName: "🛡️ Escudo de Escamas",
+        desc: "IMUNIDADE TOTAL. Você não recebe dano ou status até o próximo turno.",
+        cost: "3 Energias ⚡⚡⚡",
+        damage: 0,
+        statusApply: "immune", // Novo status para implementar depois se quiser
+        turns: 1
+    },
+    "Iara": {
+        role: "Suporte",
+        // Ataque Básico (Automático no Crítico)
+        onCrit: "stun", // Prisão = Stun
+        onCritTurns: 1,
+
+        // Botão de Habilidade: Skill [2] Melodia Suave
+        skillName: "🎵 Melodia Suave",
+        desc: "CURA FLEXÍVEL. Cure 1 de Vida de aliados na sua zona.",
+        cost: "1 Energia ⚡",
+        damage: 0,
+        statusApply: null,
+        isHeal: true
+    },
+    "Caipora": {
+        role: "Dano",
+        // Ataque Básico (Automático no Crítico)
+        onCrit: "bleed", 
+        onCritTurns: 3,
+
+        // Botão de Habilidade: Skill [3] Fúria da Alcatéia
+        skillName: "🐾 Fúria da Alcatéia",
+        desc: "ATAQUE BRUTAL. Role 4 Dados Bons manualmente. (O App apenas registra o uso).",
+        cost: "2 Energias ⚡⚡",
+        damage: 0, // Dano variável, jogador resolve no dado físico
+        statusApply: null
+    }
+};
+
 const monstrosDB = [{ nome: "Rastro de Pólvora", hp: 3 }, { nome: "Serra Autônoma", hp: 4 }, { nome: "Lama Tóxica", hp: 3 }, { nome: "Fogo Fátuo", hp: 3 }, { nome: "Golem de Mercúrio", hp: 4 }];
 const bossesDB = [
     { nome: "👁️ Alucinação da Cuca", hp: 13, turn: 5, title: "BOSS: A MENTE MENTE!", loot: "🧿 Amuleto da Cuca" },

@@ -536,24 +536,26 @@ function renderBattleInventory() {
     });
 }
 
-// --- 7. MÓDULO DE COMBATE (ENCAPSULADO) ---
+// --- 7. MÓDULO DE COMBATE (ENCAPSULADO & ATUALIZADO) ---
 
 const CombatState = {
     inimigo: null,
     buffDano: 0,
-    buffEnxame: 0,
     isBoss: false,
+    // Status agora usam contadores (números) ou booleanos
+    status: {
+        stun: false,
+        fragile: false,
+        bleed: 0,  // Contador de turnos
+        burn: 0    // Contador de turnos
+    },
 
     reset: function (monstro) {
         this.inimigo = monstro;
         this.buffDano = 0;
-        this.buffEnxame = 0;
-        this.isBoss = monstro.nome.includes("BOSS") || monstro.nome.includes("GLITCH") || monstro.nome.includes("Cuca") || monstro.nome.includes("Boto") || monstro.nome.includes("Jurupari") || monstro.nome.includes("Devorador");
-
-        const aliados = GameState.entidades.monstros.filter(m => m.loc === monstro.loc && m.id !== monstro.id).length;
-        if (aliados > 0 && !this.isBoss && monstro.type !== 'evento') {
-            this.buffEnxame = 1;
-        }
+        this.isBoss = monstro.nome.includes("BOSS") || monstro.nome.includes("GLITCH") || monstro.nome.includes("Cuca") || monstro.nome.includes("Boto");
+        // Reseta status para o padrão
+        this.status = { stun: false, fragile: false, bleed: 0, burn: 0 };
     }
 };
 
@@ -563,13 +565,12 @@ function abrirCombate(id) {
     if (!monstro) return;
 
     CombatState.reset(monstro);
-    monstroCombateAtual = monstro; // Compatibilidade
+    monstroCombateAtual = monstro;
 
     document.getElementById('modal-combate').style.display = 'flex';
     document.getElementById('modal-titulo').innerText = "VS " + monstro.nome.toUpperCase();
 
     let hpText = monstro.hp + " HP";
-    if (CombatState.buffEnxame > 0) hpText += " <span style='color:red; font-size:0.6em'>(+1 Dano Enxame)</span>";
     document.getElementById('modal-hp').innerHTML = hpText;
 
     AudioSys.playMusic(CombatState.isBoss ? 'boss' : 'common');
@@ -582,13 +583,18 @@ function abrirCombate(id) {
     atualizarSelecaoHerois(monstro);
 }
 
+// --- LÓGICA DO JOGADOR (ATAQUE BÁSICO + CRÍTICO AUTOMÁTICO) ---
 function ataqueBasico() {
     AudioSys.checkResume();
     const dadosBons = Array.from(document.querySelectorAll('.dice-input.good')).map(i => parseInt(i.value) || 0);
     const dadosRuins = Array.from(document.querySelectorAll('.dice-input.bad')).map(i => parseInt(i.value) || 0);
+    
     if (dadosBons.length === 0 && dadosRuins.length === 0) return;
 
+    // Lógica de Acertos (4, 5, 6)
     const hits = [...dadosBons, ...dadosRuins].filter(v => v >= 4).length;
+    
+    // Lógica de Crítico (Maior Dado Bom == Maior Dado Ruim)
     const maxBom = Math.max(0, ...dadosBons);
     const maxRuim = Math.max(0, ...dadosRuins);
     const ganhouEnergia = maxBom > maxRuim;
@@ -598,13 +604,51 @@ function ataqueBasico() {
     let msg = "";
     let cssClass = "log-miss";
 
+    // Pega dados do Herói Ativo para ver se tem efeito no Crítico
+    const nomeHeroi = document.getElementById('active-hero').value;
+    const heroData = heroisDB[nomeHeroi];
+
     if (isCritico) {
-        if (danoFinal === 0) danoFinal = 1;
+        if (danoFinal === 0) danoFinal = 1; // Crítico garante min 1 dano
         msg = `💥 CRÍTICO! (${danoFinal} Dano)`;
         cssClass = "log-crit";
         AudioSys.sfx.crit();
+
+        // --- AQUI A MÁGICA ACONTECE (CAIPORA/BOITATÁ) ---
+        if (heroData && heroData.onCrit) {
+            const tipo = heroData.onCrit;
+            const turnos = heroData.onCritTurns;
+
+            // Aplica Sangramento (Caipora)
+            if (tipo === 'bleed') {
+                CombatState.status.bleed = turnos;
+                msg += `<br>🩸 SANGRANDO (${turnos}T)`;
+            }
+            // Aplica Queimadura (Boitatá)
+            else if (tipo === 'burn') {
+                CombatState.status.burn = turnos;
+                msg += `<br>🔥 QUEIMANDO (${turnos}T)`;
+            }
+            // Aplica Stun (Saci/Iara)
+            else if (tipo === 'stun') {
+                CombatState.status.stun = true;
+                msg += `<br>😵 ATORDOADO!`;
+            }
+            
+            // Atualiza o visual do topo da tela
+            atualizarIconesStatus();
+        }
+
     } else if (danoFinal > 0) {
-        msg = `⚔️ ACERTOU! (${danoFinal} Dano)`;
+        // Lógica do Status Frágil (Se o monstro já estava frágil)
+        if (CombatState.status.fragile) {
+            danoFinal += 1;
+            msg = `💔 FRÁGIL: +1 Dano! `;
+            CombatState.status.fragile = false;
+            atualizarIconesStatus();
+        }
+
+        msg += `⚔️ ACERTOU! (${danoFinal} Dano)`;
         if (ganhouEnergia) msg += " + ⚡ Energia";
         cssClass = "log-hit";
         AudioSys.sfx.hit();
@@ -613,66 +657,142 @@ function ataqueBasico() {
         AudioSys.playTone(150, 'sine', 0.2);
     }
 
+    // Buffs de Itens
     if (danoFinal > 0 && CombatState.buffDano > 0) {
         danoFinal += CombatState.buffDano;
-        msg += `<br><small>+${CombatState.buffDano} Bônus</small>`;
+        msg += `<br><small>+${CombatState.buffDano} Bônus Item</small>`;
         CombatState.buffDano = 0;
     }
 
+    // Renderiza
     document.getElementById('combat-feedback').innerHTML = `<span class="${cssClass}">${msg}</span>`;
-    addLog(`🎲 ${getActiveHeroName()}: ${msg.replace('<br>', ' ')}`);
+    addLog(`🎲 ${nomeHeroi}: ${msg.replace('<br>', ' ')}`);
 
     if (danoFinal > 0) aplicarDanoReal(danoFinal, false);
 }
 
-function aplicarDanoReal(dano, isDanoNoHeroi) {
-    if (!CombatState.inimigo) return;
+// --- LÓGICA DE HABILIDADE (COM STATUS) ---
+function usarHabilidade() {
+    AudioSys.checkResume();
+    const nomeHeroi = document.getElementById('active-hero').value;
+    const heroData = heroisDB[nomeHeroi]; // Pega do data.js
 
-    if (!isDanoNoHeroi) {
-        CombatState.inimigo.hp -= dano;
-        document.getElementById('modal-hp').innerText = CombatState.inimigo.hp + " HP";
+    if (!heroData) {
+        // Fallback para input manual se não tiver herói selecionado
+        const dano = parseInt(document.getElementById('dmg-manual').value);
+        if (!isNaN(dano)) {
+            AudioSys.sfx.crit();
+            document.getElementById('combat-feedback').innerHTML = `<span class="log-hit">✨ HABILIDADE MANUAL (-${dano} HP)</span>`;
+            aplicarDanoReal(dano, false);
+        }
+        return;
+    }
 
-        showFloatingText(dano, window.innerWidth / 2, window.innerHeight / 2 - 100, 'dmg-hero');
+    // Confirmação Híbrida (Custo Físico)
+    if (!confirm(`Você pagou o custo físico?\n(${heroData.cost})\n\nUsar ${heroData.skillName}?`)) return;
 
-        if (CombatState.inimigo.hp <= 0) {
-            finalizarVitoria();
+    AudioSys.sfx.crit();
+    let msg = `✨ ${heroData.skillName}`;
+
+    // 1. Aplica Dano Imediato
+    if (heroData.damage > 0) {
+        aplicarDanoReal(heroData.damage, false);
+        msg += ` (-${heroData.damage} HP)`;
+    }
+
+    // 2. Aplica Status e Define Contadores
+    if (heroData.statusApply) {
+        const tipo = heroData.statusApply;
+        
+        if (tipo === 'stun') {
+            CombatState.status.stun = true;
+            msg += "<br>😵 APLICOU STUN!";
+        } 
+        else if (tipo === 'fragile') {
+            CombatState.status.fragile = true;
+            msg += "<br>💔 APLICOU FRÁGIL!";
+        }
+        else if (tipo === 'bleed') {
+            CombatState.status.bleed = heroData.turns; // Define 3 turnos
+            msg += `<br>🩸 SANGRAR (${heroData.turns} Turnos)`;
+        }
+        else if (tipo === 'burn') {
+            CombatState.status.burn = heroData.turns; // Define 2 turnos
+            msg += `<br>🔥 QUEIMAR (${heroData.turns} Turnos)`;
         }
     }
+
+    document.getElementById('combat-feedback').innerHTML = `<span class="log-crit" style="color:#29B6F6;">${msg}</span>`;
+    addLog(`🌟 ${nomeHeroi} usou habilidade: ${heroData.skillName}`);
+    atualizarIconesStatus();
 }
 
+// --- LÓGICA DO INIMIGO (TURNO INTELIGENTE) ---
 function turnoVilao(isCarregando) {
     AudioSys.checkResume();
     if (!CombatState.inimigo) return;
 
-    const alvos = document.querySelectorAll('.target-chk:checked');
-    if (alvos.length === 0) { alert("Selecione quem vai tomar o dano!"); return; }
+    // 1. VERIFICA STUN (Perde a vez)
+    if (CombatState.status.stun) {
+        alert("O INIMIGO ESTÁ ATORDOADO!\nEle perde a vez.");
+        addLog("😵 Inimigo atordoado perdeu o turno.");
+        CombatState.status.stun = false; // Stun dura 1 turno apenas
+        atualizarIconesStatus();
+        document.getElementById('combat-feedback').innerHTML = "<span class='log-hit'>😵 Inimigo Atordoado!</span>";
+        return; // Sai da função, não ataca
+    }
 
-    const alvoEscolhido = alvos[Math.floor(Math.random() * alvos.length)].value.toUpperCase();
     const btn = document.getElementById('btn-villain-atk');
-
     btn.disabled = true;
     btn.style.opacity = "0.5";
     document.getElementById('combat-feedback').innerText = "⚠ Vilão preparando ataque...";
     AudioSys.playTone(100, 'sawtooth', 0.5);
 
     setTimeout(() => {
-        let danoMax = CombatState.isBoss ? 4 : 2;
-        let dano = Math.floor(Math.random() * danoMax) + 1;
+        // 2. VERIFICA SANGRAMENTO (Dano antes de agir)
+        if (CombatState.status.bleed > 0) {
+            const danoBleed = 1; // Regra: 1 de dano por turno
+            CombatState.inimigo.hp -= danoBleed;
+            CombatState.status.bleed--; // Reduz contador
+            
+            document.getElementById('modal-hp').innerText = CombatState.inimigo.hp + " HP";
+            addLog(`🩸 Sangramento: Vilão tomou ${danoBleed} dano.`);
+            showFloatingText(danoBleed, window.innerWidth/2, window.innerHeight/2 - 100, 'dmg-hero');
+            
+            atualizarIconesStatus();
 
-        if (CombatState.buffEnxame > 0 && !CombatState.isBoss) dano += 1;
-        if (CombatState.inimigo.fraqueza) {
-            dano = 1;
-            CombatState.inimigo.fraqueza = false;
-            addLog("🕸️ Vilão estava enredado (Dano reduzido para 1)");
+            // Se morrer de sangramento, acaba aqui
+            if (CombatState.inimigo.hp <= 0) {
+                finalizarVitoria();
+                return;
+            }
+        }
+
+        // 3. CÁLCULO DE DANO (Com Queimadura)
+        const alvos = document.querySelectorAll('.target-chk:checked');
+        let alvoNome = "HERÓI";
+        if (alvos.length > 0) alvoNome = alvos[Math.floor(Math.random() * alvos.length)].value.toUpperCase();
+
+        let danoBase = CombatState.isBoss ? 4 : 2; // Dano máximo do dado (d3 ou d4)
+        let danoRolado = Math.floor(Math.random() * danoBase) + 1;
+        let msgExtra = "";
+
+        // Regra de Queimadura: Reduz dano em 1
+        if (CombatState.status.burn > 0) {
+            const reducao = 1;
+            danoRolado = Math.max(0, danoRolado - reducao); // Não deixa ficar negativo
+            CombatState.status.burn--; // Reduz contador
+            msgExtra = `<br><small>🔥 Queimadura reduziu o dano em ${reducao}!</small>`;
+            atualizarIconesStatus();
         }
 
         document.body.classList.add('shake-active');
         AudioSys.sfx.villain();
-        showFloatingText(dano, window.innerWidth / 2, window.innerHeight / 2 + 50, 'dmg-enemy');
+        showFloatingText(danoRolado, window.innerWidth / 2, window.innerHeight / 2 + 50, 'dmg-enemy');
 
-        const msg = `⚔️ ${alvoEscolhido} TOMOU ${dano} DANO!`;
+        const msg = `⚔️ ${alvoNome} TOMOU ${danoRolado} DANO!${msgExtra}`;
         document.getElementById('combat-feedback').innerHTML = `<div class="villain-strike-text">${msg}</div>`;
-        addLog(`👹 ${CombatState.inimigo.nome} atacou ${alvoEscolhido} (${dano})`);
+        addLog(`👹 ${CombatState.inimigo.nome} atacou ${alvoNome} (${danoRolado})`);
 
         setTimeout(() => {
             document.body.classList.remove('shake-active');
@@ -680,6 +800,69 @@ function turnoVilao(isCarregando) {
             btn.style.opacity = "1";
         }, 500);
     }, 800);
+}
+
+// --- FUNÇÕES AUXILIARES E UI ---
+
+function aplicarDanoReal(dano, isDanoNoHeroi) {
+    if (!CombatState.inimigo) return;
+
+    if (!isDanoNoHeroi) {
+        CombatState.inimigo.hp -= dano;
+        document.getElementById('modal-hp').innerText = CombatState.inimigo.hp + " HP";
+        showFloatingText(dano, window.innerWidth / 2, window.innerHeight / 2 - 100, 'dmg-hero');
+        if (CombatState.inimigo.hp <= 0) {
+            finalizarVitoria();
+        }
+    }
+}
+
+function atualizarIconesStatus() {
+    let html = "VS " + CombatState.inimigo.nome.toUpperCase();
+    
+    // Adiciona ícones se os status estiverem ativos
+    if (CombatState.status.stun) html += " 😵";
+    if (CombatState.status.fragile) html += " 💔";
+    if (CombatState.status.bleed > 0) html += ` 🩸(${CombatState.status.bleed})`;
+    if (CombatState.status.burn > 0) html += ` 🔥(${CombatState.status.burn})`;
+    
+    document.getElementById('modal-titulo').innerHTML = html;
+}
+
+function atualizarSelecaoHerois(monstro) {
+    const select = document.getElementById('active-hero');
+    const zoneDiv = document.getElementById('zone-targets');
+    const btnSkill = document.querySelector('.btn-skill'); // Botão de Habilidade
+    
+    select.innerHTML = ""; 
+    zoneDiv.innerHTML = "";
+
+    GameState.entidades.herois.forEach(heroi => {
+        // Dropdown
+        const opt = document.createElement('option');
+        opt.value = heroi;
+        opt.innerText = heroi.toUpperCase();
+        select.appendChild(opt);
+
+        // Checkboxes de Alvo
+        const disabledAttr = CombatState.isBoss ? "onclick='return false;'" : "";
+        zoneDiv.innerHTML += `<label class="target-label"><input type="checkbox" value="${heroi}" class="target-chk" checked ${disabledAttr}> ${heroi.toUpperCase()}</label>`;
+    });
+
+    // Atualiza o texto do botão quando troca o herói
+    select.onchange = function() {
+        const nome = this.value;
+        const dados = heroisDB[nome];
+        if (dados) {
+            btnSkill.innerHTML = `✨ ${dados.skillName}`;
+            btnSkill.title = dados.desc;
+        } else {
+            btnSkill.innerHTML = "✨ Habilidade";
+        }
+    };
+    
+    // Dispara uma vez para iniciar
+    if (GameState.entidades.herois.length > 0) select.onchange();
 }
 
 function finalizarVitoria() {
@@ -714,31 +897,6 @@ function fecharCombate() {
     document.getElementById('modal-combate').style.display = 'none';
     CombatState.inimigo = null;
     monstroCombateAtual = null;
-}
-
-function usarHabilidade() {
-    const dano = parseInt(document.getElementById('dmg-manual').value);
-    if (isNaN(dano)) return;
-    AudioSys.sfx.crit();
-    document.getElementById('combat-feedback').innerHTML = `<span class="log-hit">✨ HABILIDADE (-${dano} HP)</span>`;
-    addLog(`✨ Habilidade usada: ${dano} dano.`);
-    aplicarDanoReal(dano, false);
-}
-
-function atualizarSelecaoHerois(monstro) {
-    const select = document.getElementById('active-hero');
-    const zoneDiv = document.getElementById('zone-targets');
-    select.innerHTML = ""; zoneDiv.innerHTML = "";
-
-    GameState.entidades.herois.forEach(heroi => {
-        const opt = document.createElement('option');
-        opt.value = heroi;
-        opt.innerText = heroi.toUpperCase();
-        select.appendChild(opt);
-
-        const disabledAttr = CombatState.isBoss ? "onclick='return false;'" : "";
-        zoneDiv.innerHTML += `<label class="target-label"><input type="checkbox" value="${heroi}" class="target-chk" checked ${disabledAttr}> ${heroi.toUpperCase()}</label>`;
-    });
 }
 
 function checkCrisisObjective(deadId) {
@@ -812,3 +970,71 @@ function checkDebugPassword() {
         AudioSys.playTone(150, 'sawtooth', 0.5);
     }
 }
+
+/* ==========================================================================
+   SISTEMA DE PERSISTÊNCIA (SAVE/LOAD)
+   ========================================================================== */
+
+function salvarJogo() {
+    try {
+        AudioSys.sfx.click();
+        
+        // Salva o GameState inteiro no navegador
+        localStorage.setItem('lendas_save_v1', JSON.stringify(GameState));
+        
+        alert("JOGO SALVO!\nSeus heróis descansam por enquanto...");
+        addLog("💾 Progresso salvo com sucesso.");
+    } catch (e) {
+        alert("Erro ao salvar: " + e.message);
+    }
+}
+
+function carregarJogo() {
+    try {
+        AudioSys.sfx.click();
+        
+        const saveString = localStorage.getItem('lendas_save_v1');
+        
+        if (!saveString) {
+            alert("Nenhum jogo salvo encontrado.");
+            return;
+        }
+
+        if (confirm("Carregar jogo salvo? O progresso atual será perdido.")) {
+            const loadedState = JSON.parse(saveString);
+            
+            // Mescla o estado salvo com o objeto atual
+            Object.assign(GameState, loadedState);
+            
+            // RECONSTRÓI A TELA (Importante!)
+            // 1. Troca a tela de Setup pela de Jogo
+            document.getElementById('screen-setup').classList.remove('active-screen');
+            document.getElementById('modal-briefing').style.display = 'none';
+            document.getElementById('screen-game').classList.add('active-screen');
+            
+            // 2. Atualiza os textos e barras
+            document.getElementById('turno-num').innerText = GameState.status.turno;
+            atualizarCorrupcaoUI();
+            updateObjective();
+            updateCrisisUI();
+            
+            // 3. Recria as listas visuais
+            renderLista();      // Monstros
+            renderInventario(); // Itens
+            
+            addLog("📂 Jogo carregado com sucesso.");
+            AudioSys.playMusic('explore');
+        }
+    } catch (e) {
+        alert("Erro ao carregar (Save corrompido ou versão antiga).");
+        console.error(e);
+    }
+}
+
+// Verifica se tem save ao abrir a página (Opcional - UX)
+window.onload = function() {
+    if (localStorage.getItem('lendas_save_v1')) {
+        console.log("Save encontrado. Jogador pode continuar.");
+        // Futuramente podemos mudar o botão "Iniciar" para "Continuar"
+    }
+};

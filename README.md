@@ -57,7 +57,12 @@ Este projeto foi construído com **Vanilla JavaScript** moderno, focando em perf
 5.  **Combate:** Quando encontrar um monstro, clique em **LUTAR** no App. Role seus dados físicos e insira os resultados no App. O sistema calcula o dano, aplica efeitos e narra o contra-ataque do vilão.
 
 ---
+💻 Autor
+Desenvolvido por [Seu Nome / WagDev]. Estudante de Sistemas de Informação - UFC Quixadá.
 
+Projeto criado para demonstrar domínio em Lógica de Programação, Manipulação de DOM e Game Design.
+
+"O sertão vai virar mar... de dados?" 🎲🌵
 ## 📂 Estrutura do Projeto
 
 ```bash
