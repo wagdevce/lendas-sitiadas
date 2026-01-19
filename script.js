@@ -1,84 +1,104 @@
 /* ==========================================================================
    LENDAS SITIADAS - ENGINE V0.5 (STATE-DRIVEN)
-   Código refatorado para usar GameState centralizado e Módulos.
+   Autor: Wagner Marques
+   Descrição: Core Engine controlando Estado, Turnos, Combate e UI.
    ========================================================================== */
 
-// --- 1. ESTADO DO JOGO (SINGLE SOURCE OF TRUTH) ---
+/**
+ * 1. GAME STATE (FONTE ÚNICA DA VERDADE)
+ * Este objeto armazena TODO o estado do jogo. 
+ * Se algo não está aqui, não existe para a lógica do jogo.
+ * O HTML é apenas um reflexo visual (View) destes dados (Model).
+ */
 const GameState = {
-    // Configurações Estáticas
+    // Configurações que não mudam durante a partida
     config: {
-        maxMonstros: 7,
-        debugMode: false,
-        itemsPerPage: 4
+        maxMonstros: 7,     // Limite para Game Over por superpopulação
+        debugMode: false,   // Ativa ferramentas de trapaça
+        itemsPerPage: 4     // Paginação do grimório (futuro)
     },
-    // Estado Dinâmico (O que muda durante o jogo)
+    // Variáveis que flutuam a cada ação
     status: {
-        turno: 1,
-        corrupcao: 0,
-        gameOver: false
+        turno: 1,           // Contador global de tempo
+        corrupcao: 0,       // Barra de progresso da derrota (0-100%)
+        gameOver: false     // Trava o jogo se for true
     },
-    // Listas de Entidades
+    // Listas dinâmicas de objetos
     entidades: {
-        herois: [],       // Lista de nomes (strings)
-        monstros: [],     // Objetos de monstros na mesa
-        inventario: []    // Itens coletados
+        herois: [],       // Nomes dos heróis escolhidos (ex: ["Saci", "Iara"])
+        monstros: [],     // Array de objetos de monstros vivos na mesa
+        inventario: []    // Array de objetos de itens coletados
     },
-    // Controle de Crise
+    // Estado da Missão Temporária (Crise)
     crise: {
-        ativa: false,
-        timer: 0,
-        tipo: null,
-        alvos: [],
-        titulo: ""
+        ativa: false,     // Se tem missão rodando agora
+        timer: 0,         // Turnos restantes para falhar
+        tipo: null,       // ID da crise (ex: 'fogo')
+        alvos: [],        // IDs dos monstros que precisam morrer para completar
+        titulo: ""        // Texto para exibir na tela
     },
-    // Controle de UI (Paginação)
+    // Estado da Interface (Paginação, Menus)
     ui: {
         pageRegras: 1,
         pageItens: 1,
         eventoAtual: null,
-        eventosDisponiveis: []
+        eventosDisponiveis: [] // Cópia dos eventos para não repetir
     },
-    // IDs únicos
+    // Gerador de IDs únicos (Auto-incremento)
     counters: {
-        idMonstro: 0
+        idMonstro: 0      // Garante que cada monstro tenha ID 1, 2, 3...
     }
 };
 
 // --- DADOS ESTÁTICOS (CONSTANTES) ---
+// Zonas do Tabuleiro Físico (usado para dizer onde o monstro nasce)
 const zonas = ["N1", "N2", "N3", "N4", "NE1", "NE2", "NE3", "CO1", "CO2", "CO3", "SE1", "SE2", "SE3", "S1", "S2", "S3"];
 const problemas = ["Queimada", "Garimpo", "Seca", "Desmatamento", "Óleo na Água"];
+
+// Definição das Missões de Crise (Objetivos Temporários)
 const crisesDB = [
     { id: 'fogo', titulo: "🔥 O Cerco de Fogo", desc: "Apague os 'Fogos Fátuos' (N1 e S3) antes que se espalhem!", prazo: 3, spawn: [{ nome: "Fogo Fátuo", hp: 3, loc: "N1" }, { nome: "Fogo Fátuo", hp: 3, loc: "S3" }] },
-    { id: 'torre', titulo: "🚫 Bloqueio de Sinal", desc: "Tecnologia hostil detectada! Destrua os 2 'Inibidores de Frequência' (CO2 e CO3) para recuperar o acesso à magia!", prazo: 4, spawn: [{ nome: "Inibidor de Frequência", hp: 3, loc: "CO2" }, { nome: "Inibidor de Frequência", hp: 3, loc: "CO3" }] },
-    { id: 'curupira', titulo: "🆘 Resgate do Curupira", desc: "Salve o aliado em NE2 matando os 2 'Rastros de Pólvora'!", prazo: 3, spawn: [{ nome: "Rastro de Pólvora", hp: 3, loc: "NE2" }, { nome: "Rastro de Pólvora", hp: 3, loc: "NE2" }] },
+    { id: 'torre', titulo: "🚫 Bloqueio de Sinal", desc: "Tecnologia hostil detectada! Destrua os 2 'Inibidores'!", prazo: 4, spawn: [{ nome: "Inibidor de Frequência", hp: 3, loc: "CO2" }, { nome: "Inibidor de Frequência", hp: 3, loc: "CO3" }] },
+    { id: 'curupira', titulo: "🆘 Resgate do Curupira", desc: "Salve o aliado em NE2 matando os 2 'Rastros'!", prazo: 3, spawn: [{ nome: "Rastro de Pólvora", hp: 3, loc: "NE2" }, { nome: "Rastro de Pólvora", hp: 3, loc: "NE2" }] },
     { id: 'oleo', titulo: "☣️ Maré Negra", desc: "Derrote a 'Lama Tóxica' (S2) antes que ela polua tudo!", prazo: 4, spawn: [{ nome: "Lama Tóxica", hp: 4, loc: "S2" }] }
 ];
 
-// Variável de compatibilidade temporária (para não quebrar funções legadas se houver)
+// Variável global para compatibilidade (guarda quem está lutando agora)
 let monstroCombateAtual = null;
 
 // --- 2. SISTEMA DE ÁUDIO (LIMPO) ---
+// Objeto Singleton para gerenciar sons e música sem sobreposição
 const AudioSys = {
     ctx: null, muted: false,
     tracks: { explore: null, common: null, boss: null, victory: null },
     currentTrack: null,
 
+    /** Inicializa o Contexto de Áudio do Navegador (exige interação do usuário) */
     init: function () {
         if (!this.ctx) { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
         this.checkResume();
+        // Vincula elementos <audio> do HTML
         this.tracks.explore = document.getElementById('bgm-explore');
         this.tracks.common = document.getElementById('bgm-common');
         this.tracks.boss = document.getElementById('bgm-boss');
         this.tracks.victory = document.getElementById('bgm-victory');
         this.setVolume(0.3);
     },
+    
+    /** Garante que o áudio não esteja suspenso pelo navegador */
     checkResume: function () { if (this.ctx && this.ctx.state === 'suspended') { this.ctx.resume(); } },
+    
+    /** Gera um beep sintético (Oscilador) para efeitos sonoros leves */
     playTone: function (f, t, d, v = 0.1) {
         if (this.muted || !this.ctx) return; this.checkResume(); try { const o = this.ctx.createOscillator(); const g = this.ctx.createGain(); o.type = t; o.frequency.setValueAtTime(f, this.ctx.currentTime); g.gain.setValueAtTime(v, this.ctx.currentTime); g.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + d); o.connect(g); g.connect(this.ctx.destination); o.start(); o.stop(this.ctx.currentTime + d); } catch (e) { }
     },
+    
+    /** Gera ruído branco (chiado) para sons de impacto */
     playNoise: function (d) {
         if (this.muted || !this.ctx) return; this.checkResume(); try { const b = this.ctx.createBuffer(1, this.ctx.sampleRate * d, this.ctx.sampleRate); const data = b.getChannelData(0); for (let i = 0; i < data.length; i++)data[i] = Math.random() * 2 - 1; const n = this.ctx.createBufferSource(); n.buffer = b; const g = this.ctx.createGain(); g.gain.setValueAtTime(0.2, this.ctx.currentTime); g.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + d); n.connect(g); g.connect(this.ctx.destination); n.start(); } catch (e) { }
     },
+    
+    /** Troca a música de fundo com fade-out (simples) */
     playMusic: function (type) {
         if (this.muted) return; this.checkResume();
         Object.values(this.tracks).forEach(t => { if (t) t.pause(); });
@@ -86,7 +106,10 @@ const AudioSys = {
         const track = this.tracks[type];
         if (track) { track.play().catch(e => { }); this.currentTrack = track; }
     },
+    
     setVolume: function (v) { Object.values(this.tracks).forEach(t => { if (t) t.volume = v; }); },
+    
+    // Biblioteca de SFX pré-configurados
     sfx: {
         click: () => AudioSys.playTone(800, 'sine', 0.1),
         start: () => { AudioSys.playTone(400, 'square', 0.1); setTimeout(() => AudioSys.playTone(600, 'square', 0.2), 100); },
@@ -97,7 +120,9 @@ const AudioSys = {
     }
 };
 
-// --- 3. FUNÇÕES DE INTERFACE ---
+// --- 3. FUNÇÕES DE INTERFACE (VIEW) ---
+// Controlam a abertura e fechamento de modais e menus laterais
+
 function toggleMenu() { const m = document.getElementById('side-menu'); const o = document.getElementById('overlay'); if (m.classList.contains('open')) { m.classList.remove('open'); o.style.display = 'none'; } else { m.classList.add('open'); o.style.display = 'block'; } }
 function toggleRegras() { AudioSys.sfx.click(); const m = document.getElementById('modal-regras'); m.style.display = m.style.display === 'flex' ? 'none' : 'flex'; }
 function toggleGrimorio() { AudioSys.sfx.click(); const m = document.getElementById('modal-grimorio'); m.style.display = m.style.display === 'flex' ? 'none' : 'flex'; }
@@ -110,19 +135,23 @@ function toggleItens() {
     const m = document.getElementById('modal-itens');
     if (m.style.display === 'flex') { m.style.display = 'none'; return; }
     GameState.ui.pageItens = 1;
-    renderItemBookPage();
+    // renderItemBookPage(); // Futura implementação de paginação
     m.style.display = 'flex';
 }
 
+/** Atualiza o texto do objetivo no topo da tela baseado no Turno */
 function updateObjective() {
     const o = document.getElementById('obj-display');
     const t = GameState.status.turno;
     if (t < 10) o.innerText = "OBJETIVO: CONTENHA A INVASÃO";
     else if (t < 15) o.innerText = "ALERTA: DESTRUA A MÁQUINA!";
     else o.innerText = "FINAL: ELIMINE O VÍRUS!";
+    
+    // Muda cor para vermelho quando está perto do fim
     if (t >= 10) { o.style.color = "var(--red-fire)"; o.style.borderColor = "var(--red-fire)"; }
 }
 
+/** Mostra ou esconde o Tracker de Crise (Missão Temporária) */
 function updateCrisisUI() {
     const el = document.getElementById('crisis-tracker');
     const turnEl = document.getElementById('crisis-turns');
@@ -136,6 +165,7 @@ function updateCrisisUI() {
     }
 }
 
+/** Atualiza a barra de progresso da Corrupção */
 function atualizarCorrupcaoUI() {
     let c = GameState.status.corrupcao;
     if (c > 100) c = 100;
@@ -147,6 +177,7 @@ function atualizarCorrupcaoUI() {
     }
 }
 
+/** Adiciona mensagens no log de histórico lateral */
 function addLog(t) {
     const u = document.getElementById('log-lista');
     const l = document.createElement('li');
@@ -154,18 +185,26 @@ function addLog(t) {
     u.prepend(l);
 }
 
-// --- 4. GAME LOOP & LÓGICA PRINCIPAL ---
+// --- 4. GAME LOOP & LÓGICA PRINCIPAL (CONTROLLER) ---
 
+/**
+ * Prepara o jogo com base nos heróis selecionados no Setup.
+ * Gera a primeira Crise e transfere o usuário para o Briefing.
+ */
 function prepararBriefing() {
     const inputs = document.querySelectorAll('#screen-setup input:checked');
     if (inputs.length === 0) { alert("Escolha pelo menos 1 herói."); return; }
 
-    // Migração: Usando GameState
+    // Salva heróis no GameState
     inputs.forEach(i => GameState.entidades.herois.push(i.value));
 
+    // Clona eventos para consumo
     GameState.ui.eventosDisponiveis = [...eventosDB];
+    
+    // Define dificuldade dinâmica (Limite de monstros)
     GameState.config.maxMonstros = 4 + GameState.entidades.herois.length;
 
+    // Sorteia Crise Inicial
     const crise = crisesDB[Math.floor(Math.random() * crisesDB.length)];
 
     GameState.crise.ativa = true;
@@ -177,12 +216,13 @@ function prepararBriefing() {
     const display = document.getElementById('crisis-display');
     display.innerHTML = `${crise.titulo}<br><span style='font-size:0.9rem; color:#555; font-weight:normal;'>${crise.desc}<br><b>PRAZO: ${crise.prazo} TURNOS</b></span>`;
 
+    // Spawna os monstros da Crise
     crise.spawn.forEach(m => {
         const id = spawnMonstro(m.nome, m.hp, `⚠️ CRISE: ${m.nome} em ${m.loc}!`, m.loc);
-        GameState.crise.alvos.push(id);
+        GameState.crise.alvos.push(id); // Guarda ID para verificar morte depois
     });
 
-    // Reforço para grupos grandes
+    // Reforço se tiver muitos jogadores
     if (GameState.entidades.herois.length >= 3) {
         const extraEnemy = crise.spawn[0];
         const extraLoc = zonas[Math.floor(Math.random() * zonas.length)];
@@ -194,6 +234,7 @@ function prepararBriefing() {
     AudioSys.init(); AudioSys.sfx.alarm();
 }
 
+/** Inicia o jogo de fato após o briefing */
 function comecarJogoReal() {
     AudioSys.sfx.click();
     document.getElementById('modal-briefing').style.display = 'none';
@@ -204,6 +245,13 @@ function comecarJogoReal() {
     updateCrisisUI();
 }
 
+/**
+ * O MOTOR DO JOGO. É chamado quando clica em "AVANÇAR TURNO".
+ * 1. Incrementa turno.
+ * 2. Aplica efeitos passivos (Maldição, Crise).
+ * 3. Aumenta corrupção.
+ * 4. Decide se Spawna monstro, Boss ou Evento.
+ */
 function proximoTurno() {
     AudioSys.sfx.click();
     GameState.status.turno++;
@@ -211,18 +259,18 @@ function proximoTurno() {
 
     const div = document.getElementById('evento-texto');
     const loc = zonas[Math.floor(Math.random() * zonas.length)];
-    const dado = Math.floor(Math.random() * 6) + 1;
+    const dado = Math.floor(Math.random() * 6) + 1; // Rola 1d6 interno
 
     updateObjective();
 
-    // Check de Maldição
+    // Lógica da Maldição do Olho (Item amaldiçoado)
     const temOlho = GameState.entidades.inventario.some(i => i.nome === "💎 O Olho da Cobiça");
     if (temOlho) {
         GameState.status.corrupcao += 2;
         addLog("👁️ Maldição do Olho: +2% Corrupção");
     }
 
-    // Check de Crise
+    // Lógica da Crise (Timer)
     if (GameState.crise.ativa) {
         GameState.crise.timer--;
         updateCrisisUI();
@@ -235,7 +283,7 @@ function proximoTurno() {
         }
     }
 
-    // Aumento passivo de corrupção
+    // Aumento passivo de corrupção baseada no número de monstros vivos
     const aum = GameState.entidades.monstros.length * 3;
     if (aum > 0) {
         GameState.status.corrupcao += aum;
@@ -243,22 +291,24 @@ function proximoTurno() {
     }
     atualizarCorrupcaoUI();
 
-    // Check de Boss por Turno
+    // Checa se é turno de Boss (definido em bossesDB)
     const boss = bossesDB.find(b => b.turn === GameState.status.turno);
 
     if (boss) {
         spawnMonstro(boss.nome, boss.hp, `${boss.title}<br>📍 ZONA: ${loc}`, loc);
     } else {
-        // Chance de Evento Aleatório (Saco de Eventos)
+        // 30% de chance de Evento Aleatório
         if (Math.random() < 0.3) {
+            // Recarrega eventos se acabarem
             if (GameState.ui.eventosDisponiveis.length === 0) {
-                GameState.ui.eventosDisponiveis = [...eventosDB]; // Refill
+                GameState.ui.eventosDisponiveis = [...eventosDB]; 
             }
 
             const index = Math.floor(Math.random() * GameState.ui.eventosDisponiveis.length);
             const evt = GameState.ui.eventosDisponiveis[index];
             GameState.ui.eventosDisponiveis.splice(index, 1);
 
+            // Cria um "Monstro do tipo Evento" para aparecer na lista
             GameState.counters.idMonstro++;
             GameState.entidades.monstros.push({
                 id: GameState.counters.idMonstro,
@@ -272,8 +322,9 @@ function proximoTurno() {
             return;
         }
 
-        // Spawn Normal
+        // Spawn Normal de Monstros
         let monstrosParaSpawnar = 0;
+        // Se time for grande, chance de spawn duplo
         if (GameState.entidades.herois.length >= 3) {
             monstrosParaSpawnar = 1;
             if (Math.random() > 0.4) monstrosParaSpawnar++;
@@ -289,6 +340,7 @@ function proximoTurno() {
             }
             if (monstrosParaSpawnar > 1) addLog("⚠️ HORDA: Múltiplos inimigos!");
         } else if (dado > 3) {
+            // Se não spawnar monstro, gera problema ambiental (Corrupção)
             const p = problemas[Math.floor(Math.random() * problemas.length)];
             GameState.status.corrupcao += 5;
             atualizarCorrupcaoUI();
@@ -302,7 +354,12 @@ function proximoTurno() {
     }
 }
 
+/**
+ * Factory Function para criar monstros.
+ * Atribui ID único e insere no array global.
+ */
 function spawnMonstro(n, h, msg, loc) {
+    // Checagem de limite (Game Over)
     if (GameState.entidades.monstros.length >= GameState.config.maxMonstros) {
         alert(`GAME OVER! Colapso por Superpopulação (Máx ${GameState.config.maxMonstros})!`);
         GameState.status.corrupcao = 100;
@@ -310,6 +367,8 @@ function spawnMonstro(n, h, msg, loc) {
         return;
     }
     GameState.counters.idMonstro++;
+    
+    // Objeto Monstro
     GameState.entidades.monstros.push({
         id: GameState.counters.idMonstro,
         nome: n, hp: h, hpMax: h, loc: loc
@@ -324,6 +383,10 @@ function spawnMonstro(n, h, msg, loc) {
     return GameState.counters.idMonstro;
 }
 
+/**
+ * Renderiza (desenha) a lista de monstros na tela.
+ * Usa abordagem Declarativa: Apaga tudo e desenha de novo baseado no GameState.
+ */
 function renderLista() {
     const container = document.getElementById('lista-monstros');
     container.innerHTML = "";
@@ -331,10 +394,12 @@ function renderLista() {
     const count = lista.length;
     const max = GameState.config.maxMonstros;
 
+    // Atualiza cabeçalho de Ameaças
     const titleEl = document.getElementById('threat-title');
     titleEl.innerText = `Ameaças Ativas (${count}/${max})`;
     titleEl.style.color = count >= (max - 1) ? "var(--red-fire)" : "var(--text-ink)";
 
+    // Agrupa monstros por Zona para facilitar visualização
     const grupos = {};
     lista.forEach(m => {
         const zona = m.loc || "DESCONHECIDO";
@@ -343,11 +408,13 @@ function renderLista() {
     });
 
     Object.keys(grupos).sort().forEach(zona => {
+        // Cabeçalho da Zona
         const header = document.createElement('div');
         header.className = 'zone-header';
         header.innerText = `📍 ZONA ${zona}`;
         container.appendChild(header);
 
+        // Lista de monstros naquela zona
         grupos[zona].forEach(m => {
             const isBoss = m.nome.includes("BOSS") || m.nome.includes("Alucinação") || m.nome.includes("Boto") || m.nome.includes("Devorador") || m.nome.includes("Jurupari") || m.nome.includes("Falha");
             const isEvent = m.type === 'evento';
@@ -368,10 +435,12 @@ function renderLista() {
             container.appendChild(item);
         });
     });
+    // Feedback de aumento de corrupção
     document.getElementById('threat-level').innerText = `Aumento: +${count * 3}% Corrupção/Turno`;
 }
 
 // --- 5. LÓGICA DE EVENTOS ---
+// Gerencia os encontros narrativos (não-combate)
 
 function fecharEvento() { document.getElementById('modal-evento').style.display = 'none'; }
 
@@ -381,16 +450,14 @@ function abrirEvento(idList) {
     const evtData = eventosDB.find(e => e.nome === item.nome);
     if (!evtData) return;
 
+    // Guarda qual evento estamos resolvendo
     GameState.ui.eventoAtual = { ...evtData, listId: idList };
 
     document.getElementById('evt-icon').innerText = evtData.icon;
     document.getElementById('evt-title').innerText = evtData.nome;
     document.getElementById('evt-desc').innerText = evtData.desc;
 
-    // Atualiza botões
-    const optsDiv = document.querySelector('.event-card-content'); // Fallback visual
-    // Aqui assume-se que o HTML tem botões estáticos ou que são gerados.
-    // Para simplificar, usamos a lógica antiga de botões HTML fixos chamando resolverEvento('A' ou 'B')
+    // (Simplificado) Assume botões fixos HTML que chamam resolverEvento('A' ou 'B')
     document.getElementById('modal-evento').style.display = 'flex';
 }
 
@@ -402,6 +469,7 @@ function resolverEvento(opt) {
     alert(data.res);
     addLog(`❓ Evento: ${data.res}`);
 
+    // Entrega recompensas
     if (data.loot) pegarLoot(data.loot, true);
     if (data.corr) {
         GameState.status.corrupcao += data.corr;
@@ -409,6 +477,7 @@ function resolverEvento(opt) {
         atualizarCorrupcaoUI();
     }
 
+    // Se o evento gerar um monstro (armadilha)
     if (data.spawn) {
         const hp = data.spawnHp || 4;
         const monstroOrigem = GameState.entidades.monstros.find(m => m.id === evt.listId);
@@ -417,14 +486,17 @@ function resolverEvento(opt) {
         }
     }
 
+    // Remove o evento da lista de monstros/ameaças
     GameState.entidades.monstros = GameState.entidades.monstros.filter(m => m.id !== evt.listId);
     renderLista();
     fecharEvento();
 }
 
 // --- 6. SISTEMA DE LOOT & INVENTÁRIO (STRATEGY PATTERN) ---
+// Usa um objeto Dicionário para mapear "Nome do Item" -> "Função a executar"
 
 const ItemEffects = {
+    // Itens de Cura / Utilidade
     "Água de Coco": () => { GameState.status.corrupcao = Math.max(0, GameState.status.corrupcao - 3); atualizarCorrupcaoUI(); alert("Água de Coco: Corrupção reduzida em 3%!"); return true; },
     "Óleo": () => { GameState.status.corrupcao = Math.max(0, GameState.status.corrupcao - 3); atualizarCorrupcaoUI(); alert("Óleo: Cura Total aplicada."); return true; },
     "Mel de Jataí": () => { alert("Recuperou 1 HP!"); return true; },
@@ -435,7 +507,7 @@ const ItemEffects = {
     "Açaí Atômico": () => { alert("Energia recuperada!"); return true; },
     "Bebida de Guaraná": () => { alert("Foco aumentado!"); return true; },
 
-    // Combate
+    // Itens de Combate (recebem o parâmetro inBattle)
     "Veneno de Sapo": (inBattle) => { if (!inBattle) return "BATALHA"; CombatState.buffDano += 2; alert("Lâmina envenenada! +2 de Dano."); return true; },
     "Dente de Onça": (inBattle) => { alert("Fúria da Onça! Role +1 dado."); return true; },
     "Rede de Pesca": (inBattle) => { if (!inBattle) return "BATALHA"; if (CombatState.inimigo) { CombatState.inimigo.fraqueza = true; alert("Inimigo enredado!"); return true; } return false; },
@@ -445,7 +517,7 @@ const ItemEffects = {
     "Chama": (inBattle) => aplicarDanoItem(5, inBattle),
     "Arco Sombrio": (inBattle) => aplicarDanoItem(5, inBattle),
 
-    // Passivos
+    // Passivos (não podem ser usados clicando)
     "Amuleto da Cuca": () => { alert("Item Passivo: Imunidade."); return false; },
     "Coroa do Rei": () => { alert("Item de Vitória."); return false; },
     "O Olho da Cobiça": () => { alert("Item Amaldiçoado."); return false; }
@@ -458,17 +530,22 @@ function aplicarDanoItem(dano, inBattle) {
     return true;
 }
 
+/** Executa a lógica de um item do inventário */
 function usarItem(index, isBattleContext) {
     const item = GameState.entidades.inventario[index];
     if (!item) return;
+    
+    // Busca a função no dicionário ItemEffects parcial ou total
     const effectKey = Object.keys(ItemEffects).find(key => item.nome.includes(key));
 
     if (effectKey) {
         if (confirm(`Deseja usar: ${item.nome}?`)) {
             const action = ItemEffects[effectKey];
-            const result = action(isBattleContext);
+            const result = action(isBattleContext); // Executa a função
+            
             if (result === "BATALHA") { alert("Este item só pode ser usado durante o combate!"); }
             else if (result === true) {
+                // Consome o item se retornou true
                 GameState.entidades.inventario.splice(index, 1);
                 addLog(`✨ Usou: ${item.nome}`);
                 renderInventario();
@@ -478,6 +555,7 @@ function usarItem(index, isBattleContext) {
     } else { alert(`O item "${item.nome}" foi usado, mas não teve efeito visível.`); }
 }
 
+/** Sorteia itens baseado no tipo (Boss ou Normal) */
 function gerarLoot(t) {
     const m = document.getElementById('modal-loot');
     const c = document.getElementById('loot-container');
@@ -487,6 +565,7 @@ function gerarLoot(t) {
     const bossDrops = bossesDB.map(b => b.loot);
     const itensProibidos = [...itensQuest, ...bossDrops];
 
+    // Filtra itens disponíveis no data.js
     let pool;
     if (t === 'boss') {
         pool = lootDB.filter(i => (i.tier === 'epico' || i.tier === 'lendario') && !itensProibidos.includes(i.nome));
@@ -494,6 +573,7 @@ function gerarLoot(t) {
         pool = lootDB.filter(i => (i.tier === 'comum' || i.tier === 'raro') && !itensProibidos.includes(i.nome));
     }
 
+    // Pega 3 aleatórios
     let o = pool.sort(() => 0.5 - Math.random()).slice(0, 3);
     o.forEach(i => {
         const tc = `tier-${i.tier}`;
@@ -521,6 +601,7 @@ function renderInventario() {
     if (GameState.entidades.inventario.length === 0) { container.innerHTML = '<span class="inv-empty">Vazio</span>'; return; }
     GameState.entidades.inventario.forEach((item, index) => {
         const tierClass = `tier-${item.tier}`;
+        // Adiciona data-desc para tooltip CSS
         container.innerHTML += `<div class="inv-item-side ${tierClass}" data-desc="${item.effect}" onclick="usarItem(${index}, false)">📦 ${item.nome}</div>`;
     });
 }
@@ -536,29 +617,34 @@ function renderBattleInventory() {
     });
 }
 
-// --- 7. MÓDULO DE COMBATE (ENCAPSULADO & ATUALIZADO) ---
+// --- 7. MÓDULO DE COMBATE (ENCAPSULADO) ---
 
+/**
+ * CombatState: Um "mini-estado" que existe apenas durante a luta.
+ * Evita poluir o GameState principal com dados voláteis.
+ */
 const CombatState = {
     inimigo: null,
     buffDano: 0,
     isBoss: false,
-    // Status agora usam contadores (números) ou booleanos
+    // Armazena contadores de turnos para status
     status: {
         stun: false,
         fragile: false,
-        bleed: 0,  // Contador de turnos
-        burn: 0    // Contador de turnos
+        bleed: 0,  // Contador (Ex: 3 turnos restantes)
+        burn: 0    // Contador
     },
 
+    /** Reseta o estado para iniciar uma nova luta */
     reset: function (monstro) {
         this.inimigo = monstro;
         this.buffDano = 0;
         this.isBoss = monstro.nome.includes("BOSS") || monstro.nome.includes("GLITCH") || monstro.nome.includes("Cuca") || monstro.nome.includes("Boto");
-        // Reseta status para o padrão
         this.status = { stun: false, fragile: false, bleed: 0, burn: 0 };
     }
 };
 
+/** Prepara a UI e carrega dados do monstro para o combate */
 function abrirCombate(id) {
     AudioSys.sfx.click();
     const monstro = GameState.entidades.monstros.find(m => m.id === id);
@@ -566,6 +652,15 @@ function abrirCombate(id) {
 
     CombatState.reset(monstro);
     monstroCombateAtual = monstro;
+
+    // --- CARREGAMENTO DE SPRITES (Visual Idle) ---
+    const spriteImg = document.getElementById('monster-sprite');
+    if(spriteImg) {
+        const fileName = monstro.nome.toLowerCase().replace(/ /g, "_").replace(/[^\w\s]/gi, ''); 
+        spriteImg.src = `assets/monstros/${fileName}.png`;
+        spriteImg.onerror = function() { this.src = 'assets/monstros/default_monster.png'; };
+    }
+    // ---------------------------------------------
 
     document.getElementById('modal-combate').style.display = 'flex';
     document.getElementById('modal-titulo').innerText = "VS " + monstro.nome.toUpperCase();
@@ -586,15 +681,16 @@ function abrirCombate(id) {
 // --- LÓGICA DO JOGADOR (ATAQUE BÁSICO + CRÍTICO AUTOMÁTICO) ---
 function ataqueBasico() {
     AudioSys.checkResume();
+    // Lê inputs do DOM (Dice Wrappers)
     const dadosBons = Array.from(document.querySelectorAll('.dice-input.good')).map(i => parseInt(i.value) || 0);
     const dadosRuins = Array.from(document.querySelectorAll('.dice-input.bad')).map(i => parseInt(i.value) || 0);
     
     if (dadosBons.length === 0 && dadosRuins.length === 0) return;
 
-    // Lógica de Acertos (4, 5, 6)
+    // Regra: Sucesso em 4, 5 ou 6
     const hits = [...dadosBons, ...dadosRuins].filter(v => v >= 4).length;
     
-    // Lógica de Crítico (Maior Dado Bom == Maior Dado Ruim)
+    // Regra: Crítico se Maior Bom == Maior Ruim
     const maxBom = Math.max(0, ...dadosBons);
     const maxRuim = Math.max(0, ...dadosRuins);
     const ganhouEnergia = maxBom > maxRuim;
@@ -604,7 +700,7 @@ function ataqueBasico() {
     let msg = "";
     let cssClass = "log-miss";
 
-    // Pega dados do Herói Ativo para ver se tem efeito no Crítico
+    // Pega dados do Herói Ativo para aplicar Efeito Passivo no Crítico
     const nomeHeroi = document.getElementById('active-hero').value;
     const heroData = heroisDB[nomeHeroi];
 
@@ -614,33 +710,29 @@ function ataqueBasico() {
         cssClass = "log-crit";
         AudioSys.sfx.crit();
 
-        // --- AQUI A MÁGICA ACONTECE (CAIPORA/BOITATÁ) ---
+        // Aplica efeitos passivos baseados na carta do herói
         if (heroData && heroData.onCrit) {
             const tipo = heroData.onCrit;
             const turnos = heroData.onCritTurns;
 
-            // Aplica Sangramento (Caipora)
             if (tipo === 'bleed') {
                 CombatState.status.bleed = turnos;
                 msg += `<br>🩸 SANGRANDO (${turnos}T)`;
             }
-            // Aplica Queimadura (Boitatá)
             else if (tipo === 'burn') {
                 CombatState.status.burn = turnos;
                 msg += `<br>🔥 QUEIMANDO (${turnos}T)`;
             }
-            // Aplica Stun (Saci/Iara)
             else if (tipo === 'stun') {
                 CombatState.status.stun = true;
                 msg += `<br>😵 ATORDOADO!`;
             }
             
-            // Atualiza o visual do topo da tela
             atualizarIconesStatus();
         }
 
     } else if (danoFinal > 0) {
-        // Lógica do Status Frágil (Se o monstro já estava frágil)
+        // Consome o status Frágil do inimigo (Bônus de dano)
         if (CombatState.status.fragile) {
             danoFinal += 1;
             msg = `💔 FRÁGIL: +1 Dano! `;
@@ -657,14 +749,13 @@ function ataqueBasico() {
         AudioSys.playTone(150, 'sine', 0.2);
     }
 
-    // Buffs de Itens
+    // Aplica buffs de itens consumíveis (ex: Veneno de Sapo)
     if (danoFinal > 0 && CombatState.buffDano > 0) {
         danoFinal += CombatState.buffDano;
         msg += `<br><small>+${CombatState.buffDano} Bônus Item</small>`;
         CombatState.buffDano = 0;
     }
 
-    // Renderiza
     document.getElementById('combat-feedback').innerHTML = `<span class="${cssClass}">${msg}</span>`;
     addLog(`🎲 ${nomeHeroi}: ${msg.replace('<br>', ' ')}`);
 
@@ -688,7 +779,7 @@ function usarHabilidade() {
         return;
     }
 
-    // Confirmação Híbrida (Custo Físico)
+    // Confirmação Híbrida (App pergunta se jogador pagou tokens físicos)
     if (!confirm(`Você pagou o custo físico?\n(${heroData.cost})\n\nUsar ${heroData.skillName}?`)) return;
 
     AudioSys.sfx.crit();
@@ -713,11 +804,11 @@ function usarHabilidade() {
             msg += "<br>💔 APLICOU FRÁGIL!";
         }
         else if (tipo === 'bleed') {
-            CombatState.status.bleed = heroData.turns; // Define 3 turnos
+            CombatState.status.bleed = heroData.turns; 
             msg += `<br>🩸 SANGRAR (${heroData.turns} Turnos)`;
         }
         else if (tipo === 'burn') {
-            CombatState.status.burn = heroData.turns; // Define 2 turnos
+            CombatState.status.burn = heroData.turns; 
             msg += `<br>🔥 QUEIMAR (${heroData.turns} Turnos)`;
         }
     }
@@ -742,6 +833,7 @@ function turnoVilao(isCarregando) {
         return; // Sai da função, não ataca
     }
 
+    // UI de preparação
     const btn = document.getElementById('btn-villain-atk');
     btn.disabled = true;
     btn.style.opacity = "0.5";
@@ -786,6 +878,7 @@ function turnoVilao(isCarregando) {
             atualizarIconesStatus();
         }
 
+        // Efeitos Visuais
         document.body.classList.add('shake-active');
         AudioSys.sfx.villain();
         showFloatingText(danoRolado, window.innerWidth / 2, window.innerHeight / 2 + 50, 'dmg-enemy');
@@ -808,6 +901,18 @@ function aplicarDanoReal(dano, isDanoNoHeroi) {
     if (!CombatState.inimigo) return;
 
     if (!isDanoNoHeroi) {
+        // --- Animação de Hit no Sprite ---
+        const sprite = document.getElementById('monster-sprite');
+        if(sprite) {
+            sprite.style.transform = "scale(0.8) rotate(5deg)";
+            sprite.style.filter = "brightness(2) sepia(1) saturate(5) hue-rotate(-50deg)";
+            setTimeout(() => {
+                sprite.style.transform = "scale(1) rotate(0deg)";
+                sprite.style.filter = "drop-shadow(0 0 10px rgba(0,0,0,0.5))";
+            }, 150);
+        }
+        // ---------------------------------------
+
         CombatState.inimigo.hp -= dano;
         document.getElementById('modal-hp').innerText = CombatState.inimigo.hp + " HP";
         showFloatingText(dano, window.innerWidth / 2, window.innerHeight / 2 - 100, 'dmg-hero');
@@ -829,27 +934,28 @@ function atualizarIconesStatus() {
     document.getElementById('modal-titulo').innerHTML = html;
 }
 
+/** Atualiza Dropdown de Heróis e texto do Botão de Habilidade */
 function atualizarSelecaoHerois(monstro) {
     const select = document.getElementById('active-hero');
     const zoneDiv = document.getElementById('zone-targets');
-    const btnSkill = document.querySelector('.btn-skill'); // Botão de Habilidade
+    const btnSkill = document.querySelector('.btn-skill'); 
     
     select.innerHTML = ""; 
     zoneDiv.innerHTML = "";
 
     GameState.entidades.herois.forEach(heroi => {
-        // Dropdown
+        // Preenche Dropdown
         const opt = document.createElement('option');
         opt.value = heroi;
         opt.innerText = heroi.toUpperCase();
         select.appendChild(opt);
 
-        // Checkboxes de Alvo
+        // Preenche Checkboxes de Alvo
         const disabledAttr = CombatState.isBoss ? "onclick='return false;'" : "";
         zoneDiv.innerHTML += `<label class="target-label"><input type="checkbox" value="${heroi}" class="target-chk" checked ${disabledAttr}> ${heroi.toUpperCase()}</label>`;
     });
 
-    // Atualiza o texto do botão quando troca o herói
+    // Atualiza o texto do botão quando troca o herói no select
     select.onchange = function() {
         const nome = this.value;
         const dados = heroisDB[nome];
@@ -861,7 +967,7 @@ function atualizarSelecaoHerois(monstro) {
         }
     };
     
-    // Dispara uma vez para iniciar
+    // Dispara uma vez para iniciar com o primeiro da lista
     if (GameState.entidades.herois.length > 0) select.onchange();
 }
 
@@ -869,6 +975,7 @@ function finalizarVitoria() {
     AudioSys.playMusic('victory');
     document.getElementById('combat-feedback').innerHTML = "<span class='log-crit'>💀 INIMIGO DERROTADO!</span>";
 
+    // Remove monstro do GameState
     GameState.entidades.monstros = GameState.entidades.monstros.filter(m => m.id !== CombatState.inimigo.id);
     checkCrisisObjective(CombatState.inimigo.id);
 
@@ -918,6 +1025,7 @@ function addDice(t) { AudioSys.sfx.click(); const w = document.getElementById('d
 function resetDice() { document.getElementById('dice-wrapper').innerHTML = `<div class="dice-wrapper"><input type="number" class="dice-input good" placeholder="+" inputmode="numeric"></div><div class="dice-wrapper"><input type="number" class="dice-input bad" placeholder="-" inputmode="numeric"></div><div class="btn-add-dice" onclick="openDiceMenu()">+</div>`; }
 function getActiveHeroName() { const s = document.getElementById('active-hero'); return s.value || "HERÓI"; }
 
+/** Cria texto flutuante de dano na tela (efeito visual) */
 function showFloatingText(text, x, y, type = 'dmg-hero') {
     const el = document.createElement('div');
     el.innerText = text;
@@ -929,7 +1037,9 @@ function showFloatingText(text, x, y, type = 'dmg-hero') {
     setTimeout(() => { el.remove(); }, 1000);
 }
 
-// --- DEBUG SYSTEM ---
+// --- DEBUG SYSTEM (FERRAMENTAS DE DESENVOLVIMENTO) ---
+function toggleDebug() { AudioSys.sfx.click(); const m = document.getElementById('modal-debug'); m.style.display = m.style.display === 'flex' ? 'none' : 'flex'; }
+
 function debugSpawnBoss(name) {
     const loc = zonas[Math.floor(Math.random() * zonas.length)];
     const boss = bossesDB.find(b => b.nome === name);
