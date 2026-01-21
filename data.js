@@ -164,3 +164,15 @@ const eventosDB = [
         optB: { txt: "Roubar o Rubi", res: "Você pegou a Joia Maldita! O Guardião despertou!", loot: "💎 O Olho da Cobiça", spawn: "👹 O Guardião do Rubi", spawnHp: 6 }
     }
 ];
+
+// Zonas do Tabuleiro Físico (usado para dizer onde o monstro nasce)
+const zonas = ["N1", "N2", "N3", "N4", "NE1", "NE2", "NE3", "CO1", "CO2", "CO3", "SE1", "SE2", "SE3", "S1", "S2", "S3"];
+const problemas = ["Queimada", "Garimpo", "Seca", "Desmatamento", "Óleo na Água"];
+
+// Definição das Missões de Crise (Objetivos Temporários)
+const crisesDB = [
+    { id: 'fogo', titulo: "🔥 O Cerco de Fogo", desc: "Apague os 'Fogos Fátuos' (N1 e S3) antes que se espalhem!", prazo: 3, spawn: [{ nome: "Fogo Fátuo", hp: 3, loc: "N1" }, { nome: "Fogo Fátuo", hp: 3, loc: "S3" }] },
+    { id: 'torre', titulo: "🚫 Bloqueio de Sinal", desc: "Tecnologia hostil detectada! Destrua os 2 'Inibidores'!", prazo: 4, spawn: [{ nome: "Inibidor de Frequência", hp: 3, loc: "CO2" }, { nome: "Inibidor de Frequência", hp: 3, loc: "CO3" }] },
+    { id: 'curupira', titulo: "🆘 Resgate do Curupira", desc: "Salve o aliado em NE2 matando os 2 'Rastros'!", prazo: 3, spawn: [{ nome: "Rastro de Pólvora", hp: 3, loc: "NE2" }, { nome: "Rastro de Pólvora", hp: 3, loc: "NE2" }] },
+    { id: 'oleo', titulo: "☣️ Maré Negra", desc: "Derrote a 'Lama Tóxica' (S2) antes que ela polua tudo!", prazo: 4, spawn: [{ nome: "Lama Tóxica", hp: 4, loc: "S2" }] }
+];
